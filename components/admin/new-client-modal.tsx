@@ -25,6 +25,7 @@ import {
 export type AccountStatus = "Premium" | "Standard" | "VIP"
 
 export type NewClientPayload = {
+  client_id: string
   firstName: string
   lastName: string
   email: string
@@ -48,9 +49,9 @@ export function NewClientModal({
   const [phone, setPhone] = useState("")
   const [accountStatus, setAccountStatus] = useState<AccountStatus>("Premium")
   const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<{ code: string; email: string } | null>(null)
 
-  // Reset whenever the modal is reopened
   useEffect(() => {
     if (open) {
       setFirstName("")
@@ -59,37 +60,56 @@ export function NewClientModal({
       setPhone("")
       setAccountStatus("Premium")
       setSubmitting(false)
+      setError(null)
       setSuccess(null)
     }
   }, [open])
 
   const emailValid = /^\S+@\S+\.\S+$/.test(email.trim())
-  const canSave =
-    firstName.trim().length >= 2 && lastName.trim().length >= 1 && emailValid
+  const canSave = firstName.trim().length >= 2 && lastName.trim().length >= 1 && emailValid
 
   const submit = async () => {
     if (!canSave || submitting) return
     setSubmitting(true)
+    setError(null)
 
-    // Generate a 6-digit access code
-    const code = Math.floor(100000 + Math.random() * 900000).toString()
+    try {
+      const res = await fetch("/api/admin/create-client", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          first_name: firstName.trim(),
+          last_name: lastName.trim(),
+          email: email.trim(),
+          phone: phone.trim() || undefined,
+          account_status: accountStatus,
+        }),
+      })
 
-    // Simulate "Kunde anlegen & E-Mail senden"
-    // TODO: Supabase sync — insert into `clients`, send invitation email
-    await new Promise((r) => setTimeout(r, 600))
+      const data = await res.json()
 
-    const payload: NewClientPayload = {
-      firstName: firstName.trim(),
-      lastName: lastName.trim(),
-      email: email.trim(),
-      phone: phone.trim() || undefined,
-      accountStatus,
-      accessCode: code,
+      if (!res.ok || !data.success) {
+        setError(data.error ?? "Unbekannter Fehler")
+        return
+      }
+
+      const payload: NewClientPayload = {
+        client_id: data.client_id,
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        email: email.trim(),
+        phone: phone.trim() || undefined,
+        accountStatus,
+        accessCode: data.temp_code,
+      }
+
+      onSuccess(payload)
+      setSuccess({ code: data.temp_code, email: email.trim() })
+    } catch {
+      setError("Netzwerkfehler — bitte erneut versuchen")
+    } finally {
+      setSubmitting(false)
     }
-
-    onSuccess(payload)
-    setSuccess({ code, email: payload.email })
-    setSubmitting(false)
   }
 
   return (
@@ -174,6 +194,12 @@ export function NewClientModal({
                   </SelectContent>
                 </Select>
               </div>
+
+              {error && (
+                <p className="rounded-md bg-destructive/10 border border-destructive/20 px-3 py-2 text-sm text-destructive">
+                  {error}
+                </p>
+              )}
             </div>
 
             <DialogFooter>

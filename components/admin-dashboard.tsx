@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
+import { NewClientModal } from "@/components/admin/new-client-modal"
 import {
   Plus,
   Search,
@@ -59,7 +60,6 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs"
-import { NewClientModal } from "@/components/admin/new-client-modal"
 
 // ----------------------------------------------------------------------------
 // Types
@@ -379,6 +379,7 @@ export default function AdminDashboard() {
           <KundenPage
             clients={clients}
             contracts={contracts}
+            onNewClient={() => setNewClientOpen(true)}
             onOpenProfile={(id) => {
               setProfileInitialTab("profil")
               setActiveClientId(id)
@@ -388,7 +389,6 @@ export default function AdminDashboard() {
               setProfileInitialTab("vertraege")
               setActiveClientId(id)
             }}
-            onNewClient={() => setNewClientOpen(true)}
           />
         )}
         {page === "vertraege" && (
@@ -431,12 +431,10 @@ export default function AdminDashboard() {
         onClose={() => setNewClientOpen(false)}
         onSuccess={(c) => {
           const fullName = `${c.firstName} ${c.lastName}`.trim()
-          const initials = (
-            c.firstName.charAt(0) + c.lastName.charAt(0)
-          ).toUpperCase()
+          const initials = (c.firstName.charAt(0) + c.lastName.charAt(0)).toUpperCase()
           setClients((arr) => [
             {
-              id: `c${Date.now()}`,
+              id: c.client_id ?? `c${Date.now()}`,
               initials,
               name: fullName,
               firstName: c.firstName,
@@ -452,9 +450,6 @@ export default function AdminDashboard() {
             },
             ...arr,
           ])
-          // Modal stays open to display the success banner with the access code.
-          // The user closes it via "Schließen", which calls onClose above.
-          // TODO: Supabase sync — insert into `clients`, send invitation email
         }}
       />
 
@@ -725,17 +720,17 @@ function UebersichtPage({
 function KundenPage({
   clients,
   contracts,
+  onNewClient,
   onOpenProfile,
   onOpenContract,
   onOpenProfileToContracts,
-  onNewClient,
 }: {
   clients: Client[]
   contracts: Contract[]
+  onNewClient: () => void
   onOpenProfile: (id: string) => void
   onOpenContract: (id: string) => void
   onOpenProfileToContracts: (id: string) => void
-  onNewClient: () => void
 }) {
   const [q, setQ] = useState("")
   const filtered = clients.filter(
