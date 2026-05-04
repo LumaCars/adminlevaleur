@@ -68,21 +68,28 @@ export function NewClientModal({
   const emailValid = /^\S+@\S+\.\S+$/.test(email.trim())
   const canSave = firstName.trim().length >= 2 && lastName.trim().length >= 1 && emailValid
 
-  const submit = async () => {
+  const submit = async (e?: React.FormEvent) => {
+    e?.preventDefault()
     if (!canSave || submitting) return
     setSubmitting(true)
     setError(null)
+
+    const first_name = firstName.trim()
+    const last_name = lastName.trim()
+    const email_val = email.trim()
+    const phone_val = phone.trim()
+    const account_status = accountStatus
 
     try {
       const res = await fetch("/api/admin/create-client", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          first_name: firstName.trim(),
-          last_name: lastName.trim(),
-          email: email.trim(),
-          phone: phone.trim() || undefined,
-          account_status: accountStatus,
+          first_name,
+          last_name,
+          email: email_val,
+          phone: phone_val,
+          account_status,
         }),
       })
 
@@ -95,16 +102,16 @@ export function NewClientModal({
 
       const payload: NewClientPayload = {
         client_id: data.client_id,
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
-        email: email.trim(),
-        phone: phone.trim() || undefined,
-        accountStatus,
+        firstName: first_name,
+        lastName: last_name,
+        email: email_val,
+        phone: phone_val || undefined,
+        accountStatus: account_status,
         accessCode: data.temp_code,
       }
 
       onSuccess(payload)
-      setSuccess({ code: data.temp_code, email: email.trim() })
+      setSuccess({ code: data.temp_code, email: email_val })
     } catch {
       setError("Netzwerkfehler — bitte erneut versuchen")
     } finally {
@@ -125,7 +132,7 @@ export function NewClientModal({
               </DialogDescription>
             </DialogHeader>
 
-            <div className="space-y-4 py-2">
+            <form onSubmit={submit} className="space-y-4 py-2">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="grid gap-2">
                   <Label htmlFor="ncm-first">
@@ -200,13 +207,12 @@ export function NewClientModal({
                   {error}
                 </p>
               )}
-            </div>
 
-            <DialogFooter>
-              <Button variant="outline" onClick={onClose} disabled={submitting}>
-                Abbrechen
-              </Button>
-              <Button onClick={submit} disabled={!canSave || submitting}>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={onClose} disabled={submitting}>
+                  Abbrechen
+                </Button>
+                <Button type="submit" disabled={!canSave || submitting}>
                 {submitting ? (
                   <>
                     <Loader2 className="size-4 animate-spin" />
@@ -215,8 +221,9 @@ export function NewClientModal({
                 ) : (
                   <>Kunde anlegen &amp; E-Mail senden</>
                 )}
-              </Button>
-            </DialogFooter>
+                </Button>
+              </DialogFooter>
+            </form>
           </>
         ) : (
           <>
