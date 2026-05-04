@@ -156,13 +156,6 @@ const initialReports: Report[] = []
 
 const activities: { dot: string; text: string; time: string }[] = []
 
-const activities = [
-  { dot: "bg-[var(--fin-gain)]", text: "Payout €5.400 an l.trematerra ausgezahlt", time: "vor 2 Std." },
-  { dot: "bg-primary", text: "Neuer Vertrag DV-LVMAG-2026-0423-0001 angelegt", time: "vor 5 Std." },
-  { dot: "bg-[var(--warning)]", text: "Support-Ticket #1041 eröffnet", time: "gestern" },
-  { dot: "bg-primary", text: "Q4 2025 Performance Bericht hochgeladen", time: "vor 2 Tagen" },
-]
-
 // ----------------------------------------------------------------------------
 // Helpers
 // ----------------------------------------------------------------------------
