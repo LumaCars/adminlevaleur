@@ -455,6 +455,7 @@ export default function AdminDashboard() {
   const [activeContractId, setActiveContractId] = useState<string | null>(null)
   const [payoutEntryId, setPayoutEntryId] = useState<string | null>(null)
   const [ticketDetailId, setTicketDetailId] = useState<string | null>(null)
+  const [profileInitialTab, setProfileInitialTab] = useState<"profil" | "vertraege" | "payouts" | "support">("profil")
 
   const tabs: { key: PageKey; label: string }[] = [
     { key: "uebersicht", label: "Übersicht" },
@@ -555,7 +556,16 @@ export default function AdminDashboard() {
         {page === "kunden" && (
           <KundenPage
             clients={clients}
-            onOpenProfile={(id) => setActiveClientId(id)}
+            contracts={contracts}
+            onOpenProfile={(id) => {
+              setProfileInitialTab("profil")
+              setActiveClientId(id)
+            }}
+            onOpenContract={(id) => setActiveContractId(id)}
+            onOpenProfileToContracts={(id) => {
+              setProfileInitialTab("vertraege")
+              setActiveClientId(id)
+            }}
           />
         )}
         {page === "vertraege" && (
@@ -615,9 +625,14 @@ export default function AdminDashboard() {
         tickets={tickets.filter(
           (t) => t.clientName === clients.find((c) => c.id === activeClientId)?.name,
         )}
+        initialTab={profileInitialTab}
         onClose={() => setActiveClientId(null)}
         onSave={(updated) => {
           setClients((arr) => arr.map((c) => (c.id === updated.id ? updated : c)))
+        }}
+        onOpenContract={(id) => {
+          setActiveClientId(null)
+          setActiveContractId(id)
         }}
       />
 
@@ -850,10 +865,16 @@ function UebersichtPage({
 
 function KundenPage({
   clients,
+  contracts,
   onOpenProfile,
+  onOpenContract,
+  onOpenProfileToContracts,
 }: {
   clients: Client[]
+  contracts: Contract[]
   onOpenProfile: (id: string) => void
+  onOpenContract: (id: string) => void
+  onOpenProfileToContracts: (id: string) => void
 }) {
   const [q, setQ] = useState("")
   const filtered = clients.filter(
@@ -885,7 +906,9 @@ function KundenPage({
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {filtered.map((c) => (
+        {filtered.map((c) => {
+          const clientContracts = contracts.filter((k) => k.clientId === c.id)
+          return (
           <CardShell key={c.id} className="p-5">
             <div className="flex items-start gap-4">
               <Avatar className="h-12 w-12">
@@ -923,14 +946,26 @@ function KundenPage({
                   <Button size="sm" onClick={() => onOpenProfile(c.id)}>
                     Profil öffnen
                   </Button>
-                  <Button size="sm" variant="outline">
-                    Vertrag ansehen
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={clientContracts.length === 0}
+                    onClick={() => {
+                      if (clientContracts.length === 1) {
+                        onOpenContract(clientContracts[0].id)
+                      } else if (clientContracts.length > 1) {
+                        onOpenProfileToContracts(c.id)
+                      }
+                    }}
+                  >
+                    {clientContracts.length > 1 ? "Verträge ansehen" : "Vertrag ansehen"}
                   </Button>
                 </div>
               </div>
             </div>
           </CardShell>
-        ))}
+          )
+        })}
       </div>
     </div>
   )
@@ -1535,21 +1570,30 @@ function ClientProfileSheet({
   contracts,
   payouts,
   tickets,
+  initialTab = "profil",
   onClose,
   onSave,
+  onOpenContract,
 }: {
   client: Client | null
   contracts: Contract[]
   payouts: Payout[]
   tickets: Ticket[]
+  initialTab?: "profil" | "vertraege" | "payouts" | "support"
   onClose: () => void
   onSave: (c: Client) => void
+  onOpenContract: (id: string) => void
 }) {
   const [draft, setDraft] = useState<Client | null>(client)
+  const [tab, setTab] = useState<"profil" | "vertraege" | "payouts" | "support">(initialTab)
   // Sync draft when client changes
   useEffect(() => {
     setDraft(client)
   }, [client])
+  // Sync tab when initialTab changes (e.g. opened via "Verträge ansehen")
+  useEffect(() => {
+    if (client) setTab(initialTab)
+  }, [client, initialTab])
 
   return (
     <Sheet open={!!client} onOpenChange={(b) => !b && onClose()}>
@@ -1560,7 +1604,7 @@ function ClientProfileSheet({
               <SheetTitle>{client.name}</SheetTitle>
               <SheetDescription>{client.email}</SheetDescription>
             </SheetHeader>
-            <Tabs defaultValue="profil" className="w-full">
+            <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)} className="w-full">
               <TabsList className="mx-6 mt-4">
                 <TabsTrigger value="profil">Profil</TabsTrigger>
                 <TabsTrigger value="vertraege">Verträge</TabsTrigger>
@@ -1637,14 +1681,25 @@ function ClientProfileSheet({
 
               <TabsContent value="vertraege" className="px-6 py-4 space-y-3">
                 {contracts.map((c) => (
-                  <CardShell key={c.id} className="p-3 flex items-center justify-between">
-                    <div>
-                      <p className="font-mono text-xs">{c.contractNo}</p>
-                      <p className="text-sm text-muted-foreground">
-                        <Money value={c.deposit} /> · {fmtPct(c.yieldPa)} · {c.interval}
-                      </p>
+                  <CardShell key={c.id} className="p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-mono text-xs truncate">{c.contractNo}</p>
+                        <p className="text-sm text-muted-foreground">
+                          <Money value={c.deposit} /> · {fmtPct(c.yieldPa)} · {c.interval}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <StatusPill status={c.status} />
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => onOpenContract(c.id)}
+                        >
+                          <Eye className="size-4" /> Ansehen
+                        </Button>
+                      </div>
                     </div>
-                    <StatusPill status={c.status} />
                   </CardShell>
                 ))}
                 {contracts.length === 0 && (
