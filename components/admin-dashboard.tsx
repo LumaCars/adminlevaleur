@@ -59,6 +59,7 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs"
+import { NewClientModal } from "@/components/admin/new-client-modal"
 
 // ----------------------------------------------------------------------------
 // Types
@@ -81,14 +82,18 @@ type Client = {
   id: string
   initials: string
   name: string
+  firstName?: string
+  lastName?: string
   email: string
   phone?: string
   premium: boolean
+  tier?: "Premium" | "Standard" | "VIP"
   contractsCount: number
   capital: number
   nextPayout?: string
   notes?: string
   status: "Aktiv" | "Inaktiv"
+  accessCode?: string
 }
 
 type Contract = {
@@ -421,13 +426,35 @@ export default function AdminDashboard() {
       </main>
 
       {/* New Client Modal */}
-      <NewClientDialog
+      <NewClientModal
         open={newClientOpen}
-        onOpenChange={setNewClientOpen}
-        onCreate={(c) => {
-          setClients((arr) => [{ ...c, id: `c${Date.now()}` }, ...arr])
-          setNewClientOpen(false)
-          // TODO: Supabase sync — insert into `clients`
+        onClose={() => setNewClientOpen(false)}
+        onSuccess={(c) => {
+          const fullName = `${c.firstName} ${c.lastName}`.trim()
+          const initials = (
+            c.firstName.charAt(0) + c.lastName.charAt(0)
+          ).toUpperCase()
+          setClients((arr) => [
+            {
+              id: `c${Date.now()}`,
+              initials,
+              name: fullName,
+              firstName: c.firstName,
+              lastName: c.lastName,
+              email: c.email,
+              phone: c.phone,
+              premium: c.accountStatus === "Premium" || c.accountStatus === "VIP",
+              tier: c.accountStatus,
+              contractsCount: 0,
+              capital: 0,
+              status: "Aktiv",
+              accessCode: c.accessCode,
+            },
+            ...arr,
+          ])
+          // Modal stays open to display the success banner with the access code.
+          // The user closes it via "Schließen", which calls onClose above.
+          // TODO: Supabase sync — insert into `clients`, send invitation email
         }}
       />
 
@@ -945,170 +972,6 @@ function VertraegePage({
         </div>
       </CardShell>
     </div>
-  )
-}
-
-// ----------------------------------------------------------------------------
-// New Client Dialog
-// ----------------------------------------------------------------------------
-
-function NewClientDialog({
-  open,
-  onOpenChange,
-  onCreate,
-}: {
-  open: boolean
-  onOpenChange: (b: boolean) => void
-  onCreate: (c: Omit<Client, "id">) => void
-}) {
-  const [name, setName] = useState("")
-  const [email, setEmail] = useState("")
-  const [phone, setPhone] = useState("")
-  const [premium, setPremium] = useState(false)
-  const [status, setStatus] = useState<"Aktiv" | "Inaktiv">("Aktiv")
-  const [notes, setNotes] = useState("")
-
-  // Reset form whenever the dialog is reopened
-  useEffect(() => {
-    if (open) {
-      setName("")
-      setEmail("")
-      setPhone("")
-      setPremium(false)
-      setStatus("Aktiv")
-      setNotes("")
-    }
-  }, [open])
-
-  const initials = useMemo(() => {
-    const parts = name.trim().split(/\s+/).filter(Boolean)
-    if (parts.length === 0) return ""
-    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
-    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
-  }, [name])
-
-  const emailValid = /^\S+@\S+\.\S+$/.test(email.trim())
-  const canSave = name.trim().length >= 2 && emailValid
-
-  const submit = () => {
-    if (!canSave) return
-    onCreate({
-      initials: initials || "?",
-      name: name.trim(),
-      email: email.trim(),
-      phone: phone.trim() || undefined,
-      premium,
-      contractsCount: 0,
-      capital: 0,
-      nextPayout: undefined,
-      notes: notes.trim() || undefined,
-      status,
-    })
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Neuer Kunde</DialogTitle>
-          <DialogDescription>
-            Erfasse die Stammdaten. Verträge können anschließend zugeordnet werden.
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="space-y-4 py-2">
-          <div className="grid gap-2">
-            <Label htmlFor="nc-name">
-              Name <span className="text-destructive">*</span>
-            </Label>
-            <Input
-              id="nc-name"
-              placeholder="z. B. Markus Weber"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              autoFocus
-            />
-            {initials && (
-              <p className="text-xs text-muted-foreground">
-                Initialen: <span className="font-mono">{initials}</span>
-              </p>
-            )}
-          </div>
-
-          <div className="grid gap-2">
-            <Label htmlFor="nc-email">
-              E-Mail <span className="text-destructive">*</span>
-            </Label>
-            <Input
-              id="nc-email"
-              type="email"
-              placeholder="kunde@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-            {email.length > 0 && !emailValid && (
-              <p className="text-xs text-destructive">Ungültige E-Mail-Adresse.</p>
-            )}
-          </div>
-
-          <div className="grid gap-2">
-            <Label htmlFor="nc-phone">Telefon</Label>
-            <Input
-              id="nc-phone"
-              placeholder="+41 79 123 45 67"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="grid gap-2">
-              <Label htmlFor="nc-status">Status</Label>
-              <Select value={status} onValueChange={(v) => setStatus(v as "Aktiv" | "Inaktiv")}>
-                <SelectTrigger id="nc-status">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Aktiv">Aktiv</SelectItem>
-                  <SelectItem value="Inaktiv">Inaktiv</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="nc-premium" className="flex items-center justify-between">
-                <span>Premium-Kunde</span>
-              </Label>
-              <div className="flex h-9 items-center gap-2 rounded-md border border-input bg-background px-3">
-                <Switch id="nc-premium" checked={premium} onCheckedChange={setPremium} />
-                <span className="text-sm text-muted-foreground">
-                  {premium ? "Ja" : "Nein"}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div className="grid gap-2">
-            <Label htmlFor="nc-notes">Notizen</Label>
-            <Textarea
-              id="nc-notes"
-              placeholder="Optional — interne Hinweise"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              rows={3}
-            />
-          </div>
-        </div>
-
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Abbrechen
-          </Button>
-          <Button onClick={submit} disabled={!canSave}>
-            Kunde anlegen
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   )
 }
 
