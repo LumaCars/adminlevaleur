@@ -138,6 +138,9 @@ type Report = {
   size: string
   status: "Bereit" | "Ausstehend"
   visible: boolean
+  scope: "Allgemein" | "Kundenspezifisch"
+  clientId?: string
+  clientName?: string
 }
 
 // ----------------------------------------------------------------------------
@@ -407,6 +410,7 @@ export default function AdminDashboard() {
           <BerichtePage
             reports={reports}
             contracts={contracts}
+            clients={clients}
             onToggle={(id, v) =>
               setReports((rs) => rs.map((r) => (r.id === id ? { ...r, visible: v } : r)))
             }
@@ -2108,33 +2112,68 @@ function TicketDetailDialog({
 function BerichtePage({
   reports,
   contracts,
+  clients,
   onToggle,
   onDelete,
   onUpload,
 }: {
   reports: Report[]
   contracts: Contract[]
+  clients: Client[]
   onToggle: (id: string, v: boolean) => void
   onDelete: (id: string) => void
   onUpload: (r: Report) => void
 }) {
+  const [scope, setScope] = useState<"Allgemein" | "Kundenspezifisch">("Allgemein")
+  const [clientId, setClientId] = useState<string>("")
   const [contractSel, setContractSel] = useState("Alle")
   const [type, setType] = useState<Report["type"]>("Performance")
   const [from, setFrom] = useState("")
   const [to, setTo] = useState("")
+  const [fileName, setFileName] = useState<string>("")
+
+  // When switching scope or client, reset the contract dropdown to a sensible default
+  useEffect(() => {
+    if (scope === "Allgemein") {
+      setContractSel("Alle")
+    } else {
+      setContractSel("Alle")
+    }
+  }, [scope, clientId])
+
+  const clientContracts = useMemo(
+    () => (clientId ? contracts.filter((c) => c.clientId === clientId) : []),
+    [contracts, clientId],
+  )
+  const selectedClient = useMemo(
+    () => clients.find((c) => c.id === clientId) ?? null,
+    [clients, clientId],
+  )
+
+  const canUpload =
+    scope === "Allgemein" ? true : Boolean(clientId)
 
   function handleUpload() {
+    if (!canUpload) return
+    const isClient = scope === "Kundenspezifisch"
     onUpload({
       id: `r${Date.now()}`,
-      name: `${type} ${new Date().getFullYear()}`,
-      contractNo: contractSel,
+      name: `${type} ${new Date().getFullYear()}${isClient && selectedClient ? ` · ${selectedClient.name}` : ""}`,
+      contractNo: isClient ? contractSel : "Allgemein",
       type,
       date: fmtDate(new Date()),
       period: `${from || "—"} – ${to || "—"}`,
-      size: "1.2 MB",
+      size: fileName ? "1.2 MB" : "—",
       status: "Bereit",
       visible: true,
+      scope,
+      clientId: isClient ? clientId : undefined,
+      clientName: isClient && selectedClient ? selectedClient.name : undefined,
     })
+    setFileName("")
+    setFrom("")
+    setTo("")
+    // TODO: Supabase sync — insert into `reports` (+ upload file to Vercel Blob)
   }
 
   return (
@@ -2146,24 +2185,83 @@ function BerichtePage({
 
       {/* Upload card */}
       <CardShell className="p-5 space-y-4" hover={false}>
-        <h2 className="font-semibold">Neuen Bericht hochladen</h2>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-          <div className="space-y-1.5">
-            <Label>Vertrag</Label>
-            <Select value={contractSel} onValueChange={setContractSel}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Alle">Alle Verträge</SelectItem>
-                {contracts.map((c) => (
-                  <SelectItem key={c.id} value={c.contractNo}>{c.contractNo}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <h2 className="font-semibold">Neuen Bericht hochladen</h2>
+          <p className="text-xs text-muted-foreground">
+            {scope === "Allgemein"
+              ? "Sichtbar für alle Kunden im Portal"
+              : "Nur für den ausgewählten Kunden sichtbar"}
+          </p>
+        </div>
+
+        {/* Scope toggle */}
+        <Tabs value={scope} onValueChange={(v) => setScope(v as typeof scope)}>
+          <TabsList className="grid grid-cols-2 w-full sm:w-auto">
+            <TabsTrigger value="Allgemein">Allgemeiner Bericht</TabsTrigger>
+            <TabsTrigger value="Kundenspezifisch">Kundenspezifisch</TabsTrigger>
+          </TabsList>
+        </Tabs>
+
+        {/* Client + contract picker — only when scope is "Kundenspezifisch" */}
+        {scope === "Kundenspezifisch" && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 rounded-md border border-border bg-muted/30 p-3">
+            <div className="space-y-1.5">
+              <Label>
+                Kunde <span className="text-destructive">*</span>
+              </Label>
+              <Select value={clientId} onValueChange={setClientId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Kunde auswählen…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {clients.length === 0 && (
+                    <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                      Keine Kunden vorhanden
+                    </div>
+                  )}
+                  {clients.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Vertrag (optional)</Label>
+              <Select
+                value={contractSel}
+                onValueChange={setContractSel}
+                disabled={!clientId}
+              >
+                <SelectTrigger>
+                  <SelectValue
+                    placeholder={
+                      clientId ? "Vertrag wählen…" : "Erst Kunde wählen"
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Alle">Alle Verträge des Kunden</SelectItem>
+                  {clientContracts.map((c) => (
+                    <SelectItem key={c.id} value={c.contractNo}>
+                      {c.contractNo}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
+        )}
+
+        {/* Common fields */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <div className="space-y-1.5">
             <Label>Typ</Label>
             <Select value={type} onValueChange={(v) => setType(v as Report["type"])}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value="Performance">Performance</SelectItem>
                 <SelectItem value="Jahresbericht">Jahresbericht</SelectItem>
@@ -2182,14 +2280,35 @@ function BerichtePage({
             <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
           </div>
         </div>
+
         <label className="flex flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed border-border bg-muted/30 px-6 py-8 text-center text-sm text-muted-foreground cursor-pointer hover:border-primary/40 hover:bg-primary/5 transition">
           <Upload className="size-6" />
-          PDF hier ablegen oder klicken zum Auswählen
-          <input type="file" accept=".pdf" className="hidden" />
+          {fileName ? (
+            <span className="font-medium text-foreground">{fileName}</span>
+          ) : (
+            <>PDF hier ablegen oder klicken zum Auswählen</>
+          )}
+          <input
+            type="file"
+            accept=".pdf"
+            className="hidden"
+            onChange={(e) => setFileName(e.target.files?.[0]?.name ?? "")}
+          />
         </label>
-        <Button onClick={handleUpload} className="w-full sm:w-auto">
-          <Upload className="size-4" /> Hochladen + für Kunden freigeben
-        </Button>
+
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+          <Button onClick={handleUpload} disabled={!canUpload} className="w-full sm:w-auto">
+            <Upload className="size-4" />
+            {scope === "Kundenspezifisch"
+              ? "Hochladen + für Kunde freigeben"
+              : "Hochladen + für alle Kunden freigeben"}
+          </Button>
+          {scope === "Kundenspezifisch" && !clientId && (
+            <p className="text-xs text-muted-foreground">
+              Bitte zuerst einen Kunden auswählen.
+            </p>
+          )}
+        </div>
       </CardShell>
 
       <CardShell className="p-0 overflow-hidden">
@@ -2197,6 +2316,7 @@ function BerichtePage({
           <TableHeader>
             <TableRow>
               <TableHead>Bericht</TableHead>
+              <TableHead>Sichtbarkeit</TableHead>
               <TableHead>Vertrag</TableHead>
               <TableHead>Typ</TableHead>
               <TableHead>Datum</TableHead>
@@ -2211,6 +2331,17 @@ function BerichtePage({
             {reports.map((r) => (
               <TableRow key={r.id}>
                 <TableCell className="font-medium">{r.name}</TableCell>
+                <TableCell>
+                  {r.scope === "Kundenspezifisch" ? (
+                    <span className="inline-flex items-center rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                      {r.clientName ?? "Kunde"}
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center rounded-full border border-border bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                      Alle Kunden
+                    </span>
+                  )}
+                </TableCell>
                 <TableCell className="font-mono text-xs">{r.contractNo}</TableCell>
                 <TableCell>{r.type}</TableCell>
                 <TableCell className="font-mono text-xs">{r.date}</TableCell>
