@@ -144,198 +144,17 @@ type Report = {
 // Mock data — TODO: Supabase sync
 // ----------------------------------------------------------------------------
 
-const initialClients: Client[] = [
-  {
-    id: "c1",
-    initials: "LT",
-    name: "l.trematerra",
-    email: "l.trematerra@example.com",
-    phone: "+41 79 123 45 67",
-    premium: true,
-    contractsCount: 2,
-    capital: 195000,
-    nextPayout: "01.03.2027",
-    notes: "VIP — bevorzugte Kommunikation per E-Mail.",
-    status: "Aktiv",
-  },
-  {
-    id: "c2",
-    initials: "MH",
-    name: "M. Hoffmann",
-    email: "m.hoffmann@example.com",
-    phone: "+41 78 555 12 34",
-    premium: true,
-    contractsCount: 1,
-    capital: 50000,
-    nextPayout: "15.03.2027",
-    notes: "",
-    status: "Aktiv",
-  },
-]
+const initialClients: Client[] = []
 
-const initialContracts: Contract[] = [
-  {
-    id: "k1",
-    no: "01",
-    contractNo: "DV-LVMAG-2026-0101-0001",
-    clientId: "c1",
-    clientName: "l.trematerra",
-    deposit: 75000,
-    yieldPa: 8.5,
-    interval: "Jährlich",
-    startYear: 2026,
-    durationYears: 5,
-    endYear: 2031,
-    status: "Aktiv",
-  },
-  {
-    id: "k2",
-    no: "02",
-    contractNo: "DV-LVMAG-2026-0201-0002",
-    clientId: "c1",
-    clientName: "l.trematerra",
-    deposit: 120000,
-    yieldPa: 9.0,
-    interval: "Halbjährlich",
-    startYear: 2026,
-    durationYears: 10,
-    endYear: 2036,
-    status: "Aktiv",
-  },
-  {
-    id: "k3",
-    no: "03",
-    contractNo: "DV-LVMAG-2024-0601-0003",
-    clientId: "c2",
-    clientName: "M. Hoffmann",
-    deposit: 50000,
-    yieldPa: 7.5,
-    interval: "Endfällig",
-    startYear: 2024,
-    durationYears: 3,
-    endYear: 2027,
-    status: "Beendet",
-  },
-]
+const initialContracts: Contract[] = []
 
-const initialPayouts: Payout[] = [
-  {
-    id: "p1",
-    clientName: "l.trematerra",
-    contractNo: "DV-LVMAG-2026-0101-0001",
-    amount: 6375,
-    date: "01.03.2027",
-    interval: "Jährlich",
-    status: "Ausstehend",
-  },
-  {
-    id: "p2",
-    clientName: "M. Hoffmann",
-    contractNo: "DV-LVMAG-2026-0201-0002",
-    amount: 12000,
-    date: "15.03.2027",
-    interval: "Halbjährlich",
-    status: "Ausstehend",
-  },
-  {
-    id: "p3",
-    clientName: "M. Hoffmann",
-    contractNo: "DV-LVMAG-2024-0601-0003",
-    amount: 3750,
-    date: "01.06.2025",
-    interval: "Endfällig",
-    status: "Ausgezahlt",
-    receipt: "0xabcd…ef12",
-  },
-  {
-    id: "p4",
-    clientName: "M. Hoffmann",
-    contractNo: "DV-LVMAG-2024-0601-0003",
-    amount: 3750,
-    date: "01.06.2026",
-    interval: "Endfällig",
-    status: "Ausgezahlt",
-    receipt: "SEPA-2026-0341",
-  },
-  {
-    id: "p5",
-    clientName: "l.trematerra",
-    contractNo: "DV-LVMAG-2026-0201-0002",
-    amount: 5400,
-    date: "15.09.2026",
-    interval: "Halbjährlich",
-    status: "Ausgezahlt",
-    receipt: "0x9a32…b7c1",
-  },
-]
+const initialPayouts: Payout[] = []
 
-const initialTickets: Ticket[] = [
-  {
-    id: "t1",
-    status: "Offen",
-    contractNo: "DV-LVMAG-2026-0423-0001",
-    clientName: "l.trematerra",
-    subject: "Auszahlung verzögert",
-    amount: 6375,
-    receivedAt: "23.04.2026",
-    message:
-      "Die Auszahlung war für den 23.04. angekündigt, ist aber bisher nicht eingegangen. Bitte um Klärung.",
-  },
-  {
-    id: "t2",
-    status: "In Bearbeitung",
-    contractNo: "DV-LVMAG-2026-0201-0002",
-    clientName: "M. Hoffmann",
-    subject: "Dokument anfordern",
-    receivedAt: "01.02.2026",
-    message: "Bitte den aktuellen Halbjahresbericht zur Verfügung stellen.",
-  },
-  {
-    id: "t3",
-    status: "Offen",
-    contractNo: "DV-LVMAG-2026-0101-0001",
-    clientName: "l.trematerra",
-    subject: "Adressänderung",
-    receivedAt: "12.04.2026",
-    message: "Neue Postanschrift hinterlegen.",
-  },
-]
+const initialTickets: Ticket[] = []
 
-const initialReports: Report[] = [
-  {
-    id: "r1",
-    name: "Q4 2025 Performance",
-    contractNo: "DV-LVMAG-2026-0101-0001",
-    type: "Performance",
-    date: "15.01.2026",
-    period: "Okt–Dez 2025",
-    size: "2.4 MB",
-    status: "Bereit",
-    visible: true,
-  },
-  {
-    id: "r2",
-    name: "Jahresbericht 2025",
-    contractNo: "DV-LVMAG-2026-0101-0001",
-    type: "Jahresbericht",
-    date: "10.01.2026",
-    period: "Jan–Dez 2025",
-    size: "4.1 MB",
-    status: "Bereit",
-    visible: true,
-  },
-  {
-    id: "r3",
-    name: "Q1 2026 Vorschau",
-    contractNo: "Alle",
-    type: "Vorschau",
-    date: "31.03.2026",
-    period: "Jan–Mär 2026",
-    size: "—",
-    status: "Ausstehend",
-    visible: false,
-  },
-]
+const initialReports: Report[] = []
+
+const activities: { dot: string; text: string; time: string }[] = []
 
 const activities = [
   { dot: "bg-[var(--fin-gain)]", text: "Payout €5.400 an l.trematerra ausgezahlt", time: "vor 2 Std." },
@@ -761,8 +580,8 @@ function UebersichtPage({
         />
         <StatCard
           label="Verwaltetes Kapital"
-          value={fmtEUR(4750000)}
-          hint={`Aktuell · ${fmtEUR(totalCapital)} aus Verträgen`}
+          value={fmtEUR(totalCapital)}
+          hint="Aus aktiven Verträgen"
         />
         <StatCard
           label="Offene Support-Anfragen"
