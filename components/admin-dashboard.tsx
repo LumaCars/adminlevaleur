@@ -1701,10 +1701,16 @@ function ClientProfileSheet({
   const [tab, setTab] = useState<"profil" | "vertraege" | "payouts" | "support">(initialTab)
   const [clientContracts, setClientContracts] = useState<Contract[]>([])
   const [contractsLoading, setContractsLoading] = useState(false)
+  const [codeState, setCodeState] = useState<"idle" | "loading" | "success" | "error">("idle")
+  const [newCode, setNewCode] = useState<string | null>(null)
+  const [codeError, setCodeError] = useState<string | null>(null)
 
   // Sync draft when client changes
   useEffect(() => {
     setDraft(client)
+    setCodeState("idle")
+    setNewCode(null)
+    setCodeError(null)
   }, [client])
   // Sync tab when initialTab changes (e.g. opened via "Verträge ansehen")
   useEffect(() => {
@@ -1720,6 +1726,36 @@ function ClientProfileSheet({
       .catch(console.error)
       .finally(() => setContractsLoading(false))
   }, [client])
+
+  async function handleResetCode() {
+    if (!client) return
+    setCodeState("loading")
+    setNewCode(null)
+    setCodeError(null)
+    try {
+      const res = await fetch("/api/admin/reset-client-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          client_id: client.id,
+          email: client.email,
+          first_name: client.firstName ?? client.name.split(" ")[0] ?? "",
+          last_name: client.lastName ?? client.name.split(" ")[1] ?? "",
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setCodeState("error")
+        setCodeError(data.error || "Unbekannter Fehler")
+      } else {
+        setCodeState("success")
+        setNewCode(data.temp_code)
+      }
+    } catch {
+      setCodeState("error")
+      setCodeError("Verbindungsfehler. Bitte erneut versuchen.")
+    }
+  }
 
   return (
     <Sheet open={!!client} onOpenChange={(b) => !b && onClose()}>
@@ -1802,7 +1838,42 @@ function ClientProfileSheet({
                 >
                   Speichern
                 </Button>
-                {/* TODO: Supabase sync — clients table */}
+
+                <Separator />
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full border-[var(--fin-gain)]/40 text-[var(--fin-gain)] hover:bg-[var(--fin-gain)]/5 hover:border-[var(--fin-gain)]/60"
+                  disabled={codeState === "loading"}
+                  onClick={handleResetCode}
+                >
+                  {codeState === "loading" ? (
+                    <><Loader2 className="size-4 animate-spin" /> Code wird generiert…</>
+                  ) : (
+                    "🔄 Neuen Zugangscode generieren & senden"
+                  )}
+                </Button>
+
+                {codeState === "success" && newCode && (
+                  <div className="rounded-md border border-[var(--fin-gain)]/30 bg-[var(--fin-gain)]/5 p-4 space-y-2">
+                    <p className="text-xs font-medium text-[var(--fin-gain)] uppercase tracking-wide">
+                      ✓ Neuer Code generiert — E-Mail wurde gesendet
+                    </p>
+                    <p className="font-mono text-3xl font-bold tracking-[0.3em] text-[var(--fin-gain)]">
+                      {newCode}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Dieser Code wurde als neues Passwort gesetzt und per E-Mail an {client.email} gesendet.
+                    </p>
+                  </div>
+                )}
+
+                {codeState === "error" && codeError && (
+                  <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2">
+                    <p className="text-sm text-destructive">{codeError}</p>
+                  </div>
+                )}
               </TabsContent>
 
               <TabsContent value="vertraege" className="px-6 py-4 space-y-3">
