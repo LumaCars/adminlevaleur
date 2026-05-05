@@ -1,6 +1,15 @@
 import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/admin-client'
 
+function fmtDateStr(d: string | Date | null | undefined): string | undefined {
+  if (!d) return undefined
+  const date = new Date(d)
+  if (isNaN(date.getTime())) return String(d)
+  const dd = String(date.getDate()).padStart(2, '0')
+  const mm = String(date.getMonth() + 1).padStart(2, '0')
+  return `${dd}.${mm}.${date.getFullYear()}`
+}
+
 export async function GET() {
   console.log('[/api/admin/clients] Fetching admin_clients_view')
 
@@ -24,9 +33,14 @@ export async function GET() {
     phone: row.phone ?? undefined,
     premium: ['Premium', 'VIP'].includes(row.account_status ?? row.tier ?? ''),
     tier: row.account_status ?? row.tier,
-    contractsCount: Number(row.contracts_count ?? 0),
-    capital: Number(row.total_capital ?? row.capital ?? 0),
-    nextPayout: row.next_payout_date ?? row.next_payout ?? undefined,
+    // Try all plausible column names the view might use
+    contractsCount: Number(
+      row.contract_count ?? row.contracts_count ?? row.contract_count_active ?? 0
+    ),
+    capital: Number(
+      row.total_investment ?? row.total_capital ?? row.capital ?? row.investment_total ?? 0
+    ),
+    nextPayout: fmtDateStr(row.next_payout_date ?? row.next_payout ?? row.nextpayout),
     notes: row.notes ?? undefined,
     status: (row.status === 'active' || row.status === 'Aktiv') ? 'Aktiv' : 'Inaktiv',
   }))

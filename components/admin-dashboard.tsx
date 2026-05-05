@@ -113,6 +113,8 @@ type Contract = {
   endYear: number
   status: ContractStatus
   pdfUrl?: string
+  startDate?: string
+  endDate?: string
 }
 
 type Payout = {
@@ -301,6 +303,7 @@ export default function AdminDashboard() {
   // Modal/sheet states
   const [newClientOpen, setNewClientOpen] = useState(false)
   const [newContractOpen, setNewContractOpen] = useState(false)
+  const [newContractForClientId, setNewContractForClientId] = useState<string | null>(null)
   const [activeClientId, setActiveClientId] = useState<string | null>(null)
   const [activeContractId, setActiveContractId] = useState<string | null>(null)
   const [payoutEntryId, setPayoutEntryId] = useState<string | null>(null)
@@ -468,21 +471,22 @@ export default function AdminDashboard() {
       {/* New Contract Modal */}
       <NewContractDialog
         open={newContractOpen}
-        onOpenChange={setNewContractOpen}
+        onOpenChange={(b) => {
+          setNewContractOpen(b)
+          if (!b) setNewContractForClientId(null)
+        }}
         clients={clients}
-        onCreate={(c) => {
-          setContracts((arr) => [
-            { ...c, id: `k${arr.length + 1}`, no: String(arr.length + 1).padStart(2, "0") },
-            ...arr,
-          ])
+        defaultClientId={newContractForClientId ?? undefined}
+        onCreate={() => {
           setNewContractOpen(false)
+          setNewContractForClientId(null)
+          loadData()
         }}
       />
 
       {/* Client profile sheet */}
       <ClientProfileSheet
         client={clients.find((c) => c.id === activeClientId) ?? null}
-        contracts={contracts.filter((k) => k.clientId === activeClientId)}
         payouts={payouts.filter(
           (p) => p.clientName === clients.find((c) => c.id === activeClientId)?.name,
         )}
@@ -498,12 +502,15 @@ export default function AdminDashboard() {
           setActiveClientId(null)
           setActiveContractId(id)
         }}
+        onAddContract={(clientId) => {
+          setNewContractForClientId(clientId)
+          setNewContractOpen(true)
+        }}
       />
 
       {/* Contract detail sheet */}
       <ContractDetailSheet
         contract={contracts.find((c) => c.id === activeContractId) ?? null}
-        payouts={payouts}
         onClose={() => setActiveContractId(null)}
       />
 
@@ -1040,14 +1047,20 @@ function NewContractDialog({
   open,
   onOpenChange,
   clients,
+  defaultClientId,
   onCreate,
 }: {
   open: boolean
   onOpenChange: (b: boolean) => void
   clients: Client[]
+  defaultClientId?: string
   onCreate: (c: Omit<Contract, "id" | "no">) => void
 }) {
-  const [clientId, setClientId] = useState<string>(clients[0]?.id ?? "")
+  const [clientId, setClientId] = useState<string>(defaultClientId ?? clients[0]?.id ?? "")
+
+  useEffect(() => {
+    if (open) setClientId(defaultClientId ?? clients[0]?.id ?? "")
+  }, [open, defaultClientId, clients])
   const [year, setYear] = useState("2026")
   const [mmtt, setMmtt] = useState("")
   const [seq, setSeq] = useState("")
@@ -1146,7 +1159,7 @@ function NewContractDialog({
           <section className="space-y-3">
             <h3 className="text-sm font-semibold">1 · Kunde</h3>
             <div className="flex gap-3">
-              <Select value={clientId} onValueChange={setClientId}>
+              <Select value={clientId} onValueChange={setClientId} disabled={!!defaultClientId}>
                 <SelectTrigger className="flex-1">
                   <SelectValue placeholder="Kunde auswählen" />
                 </SelectTrigger>
@@ -1158,7 +1171,9 @@ function NewContractDialog({
                   ))}
                 </SelectContent>
               </Select>
-              <Button variant="outline" type="button">+ Neuen Kunden anlegen</Button>
+              {!defaultClientId && (
+                <Button variant="outline" type="button">+ Neuen Kunden anlegen</Button>
+              )}
             </div>
           </section>
 
@@ -1371,16 +1386,30 @@ function NewContractDialog({
 
 function ContractDetailSheet({
   contract,
-  payouts,
   onClose,
 }: {
   contract: Contract | null
-  payouts: Payout[]
   onClose: () => void
 }) {
   const open = !!contract
+  const [fetchedPayouts, setFetchedPayouts] = useState<Payout[]>([])
+
+  useEffect(() => {
+    if (!contract) { setFetchedPayouts([]); return }
+    fetch(`/api/admin/payouts?contract_id=${contract.id}`)
+      .then((r) => r.json())
+      .then((d) => { if (Array.isArray(d.payouts)) setFetchedPayouts(d.payouts) })
+      .catch(console.error)
+  }, [contract])
 
   const schedule = useMemo(() => {
+    if (fetchedPayouts.length > 0) {
+      return fetchedPayouts.map((p) => ({
+        date: p.date,
+        amount: p.amount,
+        status: p.status,
+      }))
+    }
     if (!contract) return []
     const items: { date: string; amount: number; status: PayoutStatus }[] = []
     const yearly = (contract.deposit * contract.yieldPa) / 100
@@ -1411,12 +1440,12 @@ function ContractDetailSheet({
       })
     }
     return items
-  }, [contract])
+  }, [contract, fetchedPayouts])
 
   const yearlyReturn = contract ? (contract.deposit * contract.yieldPa) / 100 : 0
   const totalReturn = contract ? yearlyReturn * contract.durationYears : 0
-  const paidOut = payouts
-    .filter((p) => p.contractNo === contract?.contractNo && p.status === "Ausgezahlt")
+  const paidOut = fetchedPayouts
+    .filter((p) => p.status === "Ausgezahlt")
     .reduce((s, p) => s + p.amount, 0)
   const open_ = totalReturn - paidOut
 
@@ -1467,8 +1496,14 @@ function ContractDetailSheet({
                 <ReadField label="Rendite p.a." value={fmtPct(contract.yieldPa)} />
                 <ReadField label="Intervall" value={contract.interval} />
                 <ReadField label="Laufzeit" value={`${contract.durationYears} Jahre`} />
-                <ReadField label="Vertragsstart" value={`01.${String((contract.startYear === 2024 ? 6 : 1)).padStart(2,"0")}.${contract.startYear}`} />
-                <ReadField label="Vertragsende" value={`...${contract.endYear}`} />
+                <ReadField
+                  label="Vertragsstart"
+                  value={contract.startDate ? fmtDate(parseISO(contract.startDate)) : `${contract.startYear}`}
+                />
+                <ReadField
+                  label="Vertragsende"
+                  value={contract.endDate ? fmtDate(parseISO(contract.endDate)) : `${contract.endYear}`}
+                />
               </div>
 
               <div className="flex gap-2">
@@ -1529,25 +1564,28 @@ function ReadField({ label, value }: { label: string; value: string }) {
 
 function ClientProfileSheet({
   client,
-  contracts,
   payouts,
   tickets,
   initialTab = "profil",
   onClose,
   onSave,
   onOpenContract,
+  onAddContract,
 }: {
   client: Client | null
-  contracts: Contract[]
   payouts: Payout[]
   tickets: Ticket[]
   initialTab?: "profil" | "vertraege" | "payouts" | "support"
   onClose: () => void
   onSave: (c: Client) => void
   onOpenContract: (id: string) => void
+  onAddContract: (clientId: string) => void
 }) {
   const [draft, setDraft] = useState<Client | null>(client)
   const [tab, setTab] = useState<"profil" | "vertraege" | "payouts" | "support">(initialTab)
+  const [clientContracts, setClientContracts] = useState<Contract[]>([])
+  const [contractsLoading, setContractsLoading] = useState(false)
+
   // Sync draft when client changes
   useEffect(() => {
     setDraft(client)
@@ -1556,6 +1594,16 @@ function ClientProfileSheet({
   useEffect(() => {
     if (client) setTab(initialTab)
   }, [client, initialTab])
+  // Fetch contracts for this client whenever the sheet opens
+  useEffect(() => {
+    if (!client) { setClientContracts([]); return }
+    setContractsLoading(true)
+    fetch(`/api/admin/contracts?client_id=${client.id}`)
+      .then((r) => r.json())
+      .then((d) => { if (Array.isArray(d.contracts)) setClientContracts(d.contracts) })
+      .catch(console.error)
+      .finally(() => setContractsLoading(false))
+  }, [client])
 
   return (
     <Sheet open={!!client} onOpenChange={(b) => !b && onClose()}>
@@ -1642,7 +1690,19 @@ function ClientProfileSheet({
               </TabsContent>
 
               <TabsContent value="vertraege" className="px-6 py-4 space-y-3">
-                {contracts.map((c) => (
+                <div className="flex justify-end">
+                  <Button size="sm" onClick={() => client && onAddContract(client.id)}>
+                    <Plus className="size-4" /> Vertrag hinzufügen
+                  </Button>
+                </div>
+                {contractsLoading && (
+                  <div className="space-y-2">
+                    {[1, 2].map((i) => (
+                      <Skeleton key={i} className="h-16 w-full rounded-xl" />
+                    ))}
+                  </div>
+                )}
+                {!contractsLoading && clientContracts.map((c) => (
                   <CardShell key={c.id} className="p-3">
                     <div className="flex items-center justify-between gap-3">
                       <div className="min-w-0">
@@ -1664,7 +1724,7 @@ function ClientProfileSheet({
                     </div>
                   </CardShell>
                 ))}
-                {contracts.length === 0 && (
+                {!contractsLoading && clientContracts.length === 0 && (
                   <p className="text-sm text-muted-foreground">Keine Verträge.</p>
                 )}
               </TabsContent>
