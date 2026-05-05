@@ -1054,7 +1054,7 @@ function NewContractDialog({
   onOpenChange: (b: boolean) => void
   clients: Client[]
   defaultClientId?: string
-  onCreate: (c: Omit<Contract, "id" | "no">) => void
+  onCreate: () => void
 }) {
   const [clientId, setClientId] = useState<string>(defaultClientId ?? clients[0]?.id ?? "")
 
@@ -1069,8 +1069,9 @@ function NewContractDialog({
   const [duration, setDuration] = useState("5")
   const [interval, setInterval] = useState<Interval>("Jährlich")
   const [kapDate, setKapDate] = useState("")
-  const [pdfFile, setPdfFile] = useState<File | null>(null)
+  const [uploadFiles, setUploadFiles] = useState<File[]>([])
   const [uploading, setUploading] = useState(false)
+  const [formError, setFormError] = useState<string | null>(null)
   const [alloc, setAlloc] = useState({
     Technologie: 25,
     Gesundheit: 15,
@@ -1101,52 +1102,67 @@ function NewContractDialog({
   const reset = () => {
     setMmtt("")
     setSeq("")
-    setPdfFile(null)
+    setUploadFiles([])
+    setFormError(null)
+    setKapDate("")
   }
 
   async function handleCreate() {
+    if (!kapDate) { setFormError("Bitte Kapitaleingang-Datum eingeben."); return }
+    if (allocSum !== 100) { setFormError("Portfolio-Allokation muss 100% ergeben."); return }
     const client = clients.find((c) => c.id === clientId)
     if (!client) return
 
-    let pdfUrl: string | undefined
-
-    if (pdfFile) {
-      setUploading(true)
-      try {
-        const fd = new FormData()
-        fd.append("file", pdfFile)
-        fd.append("client_id", clientId)
-        fd.append("contract_number", contractNo)
-        const res = await fetch("/api/admin/upload-contract-pdf", { method: "POST", body: fd })
-        const data = await res.json()
-        if (res.ok && data.pdf_url) pdfUrl = data.pdf_url
-        else console.error("[NewContractDialog] PDF upload error:", data.error)
-      } catch (err) {
-        console.error("[NewContractDialog] PDF upload exception:", err)
-      } finally {
-        setUploading(false)
+    setUploading(true)
+    setFormError(null)
+    try {
+      const res = await fetch("/api/admin/contracts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          client_id: clientId,
+          contract_number: contractNo,
+          investment_amount: Number(deposit),
+          rendite_pa: Number(yieldPa),
+          duration_years: Number(duration),
+          payout_interval: interval,
+          capital_received_date: kapDate,
+          portfolio_allocation: alloc,
+          status,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setFormError(data.error || "Fehler beim Speichern.")
+        return
       }
-    }
 
-    onCreate({
-      contractNo,
-      clientId,
-      clientName: client.name,
-      deposit: Number(deposit),
-      yieldPa: Number(yieldPa),
-      interval,
-      startYear: Number(year),
-      durationYears: Number(duration),
-      endYear: Number(year) + Number(duration),
-      status,
-      pdfUrl,
-    })
-    reset()
+      // Upload each document after contract creation
+      for (const file of uploadFiles) {
+        const fd = new FormData()
+        fd.append("file", file)
+        fd.append("contract_id", data.contract.id)
+        fd.append("client_id", clientId)
+        fd.append("file_name", file.name)
+        try {
+          await fetch("/api/admin/upload-document", { method: "POST", body: fd })
+        } catch {
+          console.error("[NewContractDialog] Document upload failed:", file.name)
+        }
+      }
+
+      reset()
+      onCreate()
+    } catch {
+      setFormError("Verbindungsfehler. Bitte erneut versuchen.")
+    } finally {
+      setUploading(false)
+    }
   }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-3xl w-full max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Neuer Vertrag</DialogTitle>
           <DialogDescription>
@@ -1326,28 +1342,41 @@ function NewContractDialog({
             </div>
           </section>
 
-          {/* Section 6 — PDF */}
+          {/* Section 6 — Dokumente */}
           <section className="space-y-3">
-            <h3 className="text-sm font-semibold">6 · PDF</h3>
-            <label className={cn(
-              "flex flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed px-6 py-10 text-center text-sm cursor-pointer transition",
-              pdfFile
-                ? "border-[var(--fin-gain)]/50 bg-[var(--fin-gain)]/5 text-[var(--fin-gain)]"
-                : "border-border bg-muted/30 text-muted-foreground hover:border-primary/40 hover:bg-primary/5",
-            )}>
+            <h3 className="text-sm font-semibold">6 · Dokumente</h3>
+            <label className="flex flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed border-border bg-muted/30 px-6 py-8 text-center text-sm cursor-pointer transition hover:border-primary/40 hover:bg-primary/5 text-muted-foreground">
               <Upload className="size-6" />
-              {pdfFile ? pdfFile.name : "Vertragsdokument hochladen (.pdf)"}
+              Dokumente hochladen (.pdf, .doc, .docx)
               <input
                 type="file"
-                accept=".pdf"
+                accept=".pdf,.doc,.docx"
+                multiple
                 className="hidden"
-                onChange={(e) => setPdfFile(e.target.files?.[0] ?? null)}
+                onChange={(e) => {
+                  const files = Array.from(e.target.files ?? [])
+                  setUploadFiles((prev) => [...prev, ...files])
+                  e.target.value = ""
+                }}
               />
             </label>
-            {pdfFile && (
-              <p className="text-xs text-[var(--fin-gain)]">
-                ✓ {pdfFile.name} — wird beim Speichern hochgeladen
-              </p>
+            {uploadFiles.length > 0 && (
+              <div className="space-y-1">
+                {uploadFiles.map((f, i) => (
+                  <div key={i} className="flex items-center justify-between rounded-md border border-border px-3 py-1.5">
+                    <span className="font-mono text-xs truncate text-[var(--fin-gain)]">{f.name}</span>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="size-6 shrink-0"
+                      type="button"
+                      onClick={() => setUploadFiles(uploadFiles.filter((_, j) => j !== i))}
+                    >
+                      <Trash2 className="size-3" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
             )}
           </section>
 
@@ -1365,11 +1394,17 @@ function NewContractDialog({
           </section>
         </div>
 
+        {formError && (
+          <p className="text-sm text-destructive border border-destructive/20 rounded-md px-3 py-2 bg-destructive/5">
+            {formError}
+          </p>
+        )}
+
         <DialogFooter className="gap-2 sm:gap-2">
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={uploading}>Abbrechen</Button>
-          <Button onClick={handleCreate} disabled={allocSum !== 100 || uploading} className="flex-1 sm:flex-none">
+          <Button onClick={handleCreate} disabled={uploading} className="flex-1 sm:flex-none">
             {uploading ? (
-              <><Loader2 className="size-4 animate-spin" /> PDF wird hochgeladen…</>
+              <><Loader2 className="size-4 animate-spin" /> Wird gespeichert…</>
             ) : (
               "Speichern"
             )}
@@ -1384,6 +1419,8 @@ function NewContractDialog({
 // Contract Detail Sheet
 // ----------------------------------------------------------------------------
 
+type DocRecord = { id: string; file_name: string; file_url: string; uploaded_at: string }
+
 function ContractDetailSheet({
   contract,
   onClose,
@@ -1393,14 +1430,48 @@ function ContractDetailSheet({
 }) {
   const open = !!contract
   const [fetchedPayouts, setFetchedPayouts] = useState<Payout[]>([])
+  const [docs, setDocs] = useState<DocRecord[]>([])
+  const [docUploading, setDocUploading] = useState(false)
 
   useEffect(() => {
-    if (!contract) { setFetchedPayouts([]); return }
+    if (!contract) { setFetchedPayouts([]); setDocs([]); return }
     fetch(`/api/admin/payouts?contract_id=${contract.id}`)
       .then((r) => r.json())
       .then((d) => { if (Array.isArray(d.payouts)) setFetchedPayouts(d.payouts) })
       .catch(console.error)
+    fetch(`/api/admin/documents?contract_id=${contract.id}`)
+      .then((r) => r.json())
+      .then((d) => { if (Array.isArray(d.documents)) setDocs(d.documents) })
+      .catch(console.error)
   }, [contract])
+
+  async function handleDocUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    if (!contract) return
+    const files = Array.from(e.target.files ?? [])
+    if (!files.length) return
+    setDocUploading(true)
+    for (const file of files) {
+      const fd = new FormData()
+      fd.append("file", file)
+      fd.append("contract_id", contract.id)
+      fd.append("client_id", contract.clientId)
+      fd.append("file_name", file.name)
+      try {
+        const res = await fetch("/api/admin/upload-document", { method: "POST", body: fd })
+        const data = await res.json()
+        if (res.ok) {
+          setDocs((prev) => [{ id: data.id, file_name: data.file_name, file_url: data.url, uploaded_at: new Date().toISOString() }, ...prev])
+        }
+      } catch { /* non-fatal */ }
+    }
+    e.target.value = ""
+    setDocUploading(false)
+  }
+
+  async function handleDocDelete(id: string) {
+    const res = await fetch(`/api/admin/documents?id=${id}`, { method: "DELETE" })
+    if (res.ok) setDocs((prev) => prev.filter((d) => d.id !== id))
+  }
 
   const schedule = useMemo(() => {
     if (fetchedPayouts.length > 0) {
@@ -1510,9 +1581,54 @@ function ContractDetailSheet({
                 <Button variant="outline">
                   <Pencil className="size-4" /> Bearbeiten
                 </Button>
-                <Button variant="outline">
-                  <FileText className="size-4" /> PDF öffnen
-                </Button>
+              </div>
+
+              {/* Documents */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-sm font-semibold">Dokumente</h3>
+                  <label className="cursor-pointer">
+                    <Button size="sm" variant="outline" asChild>
+                      <span>
+                        {docUploading ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}
+                        {" "}Hochladen
+                      </span>
+                    </Button>
+                    <input
+                      type="file"
+                      accept=".pdf,.doc,.docx"
+                      multiple
+                      className="hidden"
+                      onChange={handleDocUpload}
+                    />
+                  </label>
+                </div>
+                <div className="space-y-1">
+                  {docs.map((d) => (
+                    <div key={d.id} className="flex items-center justify-between rounded-md border border-border px-3 py-2">
+                      <a
+                        href={d.file_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-2 text-sm text-primary hover:underline truncate"
+                      >
+                        <FileText className="size-4 shrink-0" />
+                        <span className="truncate">{d.file_name}</span>
+                      </a>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="size-7 shrink-0"
+                        onClick={() => handleDocDelete(d.id)}
+                      >
+                        <Trash2 className="size-3" />
+                      </Button>
+                    </div>
+                  ))}
+                  {docs.length === 0 && !docUploading && (
+                    <p className="text-sm text-muted-foreground">Keine Dokumente.</p>
+                  )}
+                </div>
               </div>
 
               {/* Schedule */}

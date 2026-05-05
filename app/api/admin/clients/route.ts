@@ -42,7 +42,7 @@ export async function GET() {
     ),
     nextPayout: fmtDateStr(row.next_payout_date ?? row.next_payout ?? row.nextpayout),
     notes: row.notes ?? undefined,
-    status: (row.status === 'active' || row.status === 'Aktiv') ? 'Aktiv' : 'Inaktiv',
+    status: 'Aktiv' as const,
   }))
 
   console.log('[/api/admin/clients] Returning', clients.length, 'clients')

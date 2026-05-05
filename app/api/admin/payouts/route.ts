@@ -20,13 +20,13 @@ export async function GET(req: NextRequest) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const payouts = (data ?? []).map((row: any) => ({
     id: String(row.id),
-    clientName: row.client_name ?? '',
-    contractNo: row.contract_no ?? '',
+    clientName: `${row.first_name ?? ''} ${row.last_name ?? ''}`.trim() || row.client_name || '',
+    contractNo: row.contract_number ?? row.contract_no ?? '',
     amount: Number(row.amount ?? 0),
-    date: row.date ?? row.due_date ?? row.payout_date ?? row.scheduled_date ?? '',
-    interval: row.interval ?? row.payout_interval ?? 'Jährlich',
+    date: row.scheduled_date ?? row.paid_date ?? row.date ?? '',
+    interval: row.payout_interval ?? row.interval ?? 'Jährlich',
     status: row.status ?? 'Ausstehend',
-    receipt: row.receipt ?? undefined,
+    receipt: row.proof_link ?? row.receipt ?? undefined,
   }))
 
   console.log('[/api/admin/payouts] Returning', payouts.length, 'payouts')
