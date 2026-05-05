@@ -45,6 +45,11 @@ export async function GET() {
     status: 'Aktiv' as const,
   }))
 
+  if (data && data.length > 0) {
+    const r = data[0] as Record<string, unknown>
+    console.log('[/api/admin/clients] First row keys:', Object.keys(r).join(', '))
+    console.log('[/api/admin/clients] First row contract_count:', r.contract_count, 'total_investment:', r.total_investment)
+  }
   console.log('[/api/admin/clients] Returning', clients.length, 'clients')
   return NextResponse.json({ clients })
 }

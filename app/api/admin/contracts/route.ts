@@ -42,6 +42,8 @@ export async function GET(req: NextRequest) {
     pdfUrl: row.pdf_url ?? undefined,
     startDate: row.contract_start_date ?? undefined,
     endDate: row.contract_end_date ?? undefined,
+    capitalReceivedDate: row.capital_received_date ?? undefined,
+    portfolioAllocation: row.portfolio_allocation ?? {},
   }))
 
   console.log('[/api/admin/contracts] Returning', contracts.length, 'contracts')
@@ -156,4 +158,100 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.json({ contract: insertData }, { status: 201 })
+}
+
+export async function PUT(req: NextRequest) {
+  console.log('[/api/admin/contracts] PUT — updating contract')
+
+  let body: Record<string, unknown>
+  try {
+    body = await req.json()
+  } catch {
+    return NextResponse.json({ error: 'Ungültiger Request-Body' }, { status: 400 })
+  }
+
+  const {
+    id,
+    contract_number,
+    investment_amount,
+    rendite_pa,
+    duration_years,
+    payout_interval,
+    capital_received_date,
+    portfolio_allocation,
+    status,
+  } = body as {
+    id: string
+    contract_number: string
+    investment_amount: number
+    rendite_pa: number
+    duration_years: number
+    payout_interval: string
+    capital_received_date: string
+    portfolio_allocation: Record<string, number>
+    status: string
+  }
+
+  if (!id || !capital_received_date) {
+    return NextResponse.json({ error: 'id und capital_received_date sind erforderlich' }, { status: 400 })
+  }
+
+  // Recalculate dates
+  const kapDate = new Date(capital_received_date)
+  const startDate = new Date(kapDate)
+  startDate.setDate(startDate.getDate() + 30)
+
+  const endDate = new Date(startDate)
+  endDate.setFullYear(endDate.getFullYear() + Number(duration_years))
+
+  let firstPayoutDate: Date
+  if (payout_interval === 'Halbjährlich') {
+    firstPayoutDate = new Date(startDate)
+    firstPayoutDate.setMonth(firstPayoutDate.getMonth() + 6)
+    firstPayoutDate.setDate(firstPayoutDate.getDate() + 30)
+  } else if (payout_interval === 'Endfällig') {
+    firstPayoutDate = new Date(endDate)
+    firstPayoutDate.setDate(firstPayoutDate.getDate() + 30)
+  } else {
+    firstPayoutDate = new Date(startDate)
+    firstPayoutDate.setFullYear(firstPayoutDate.getFullYear() + 1)
+    firstPayoutDate.setDate(firstPayoutDate.getDate() + 30)
+  }
+
+  const fmt = (d: Date) => d.toISOString().split('T')[0]
+
+  const { error: updateError } = await supabaseAdmin
+    .from('contracts')
+    .update({
+      contract_number,
+      investment_amount: Number(investment_amount),
+      rendite_pa: Number(rendite_pa),
+      duration_years: Number(duration_years),
+      payout_interval,
+      capital_received_date,
+      contract_start_date: fmt(startDate),
+      first_payout_date: fmt(firstPayoutDate),
+      contract_end_date: fmt(endDate),
+      portfolio_allocation: portfolio_allocation ?? {},
+      status,
+    })
+    .eq('id', id)
+
+  if (updateError) {
+    console.error('[/api/admin/contracts] Update error:', updateError.message)
+    return NextResponse.json({ error: updateError.message }, { status: 500 })
+  }
+
+  // Delete pending payouts and regenerate schedule
+  await supabaseAdmin.from('payouts').delete().eq('contract_id', id).eq('status', 'Ausstehend')
+
+  const { error: rpcError } = await supabaseAdmin.rpc('generate_payout_schedule', {
+    p_contract_id: id,
+  })
+  if (rpcError) {
+    console.error('[/api/admin/contracts] generate_payout_schedule error:', rpcError.message)
+  }
+
+  console.log('[/api/admin/contracts] Contract updated:', id)
+  return NextResponse.json({ success: true })
 }

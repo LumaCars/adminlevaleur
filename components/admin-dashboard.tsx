@@ -115,6 +115,8 @@ type Contract = {
   pdfUrl?: string
   startDate?: string
   endDate?: string
+  capitalReceivedDate?: string
+  portfolioAllocation?: Record<string, number>
 }
 
 type Payout = {
@@ -512,6 +514,8 @@ export default function AdminDashboard() {
       <ContractDetailSheet
         contract={contracts.find((c) => c.id === activeContractId) ?? null}
         onClose={() => setActiveContractId(null)}
+        onRefresh={loadData}
+        clients={clients}
       />
 
       {/* Payout entry modal */}
@@ -825,6 +829,10 @@ function KundenPage({
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {!loading && filtered.map((c) => {
           const clientContracts = contracts.filter((k) => k.clientId === c.id)
+          const displayCount = c.contractsCount || clientContracts.length
+          const displayCapital = c.capital || clientContracts
+            .filter((k) => k.status === "Aktiv")
+            .reduce((s, k) => s + k.deposit, 0)
           return (
           <CardShell key={c.id} className="p-5">
             <div className="flex items-start gap-4">
@@ -847,11 +855,11 @@ function KundenPage({
                 <div className="mt-4 grid grid-cols-3 gap-3 text-sm">
                   <div>
                     <p className="text-xs text-muted-foreground">Verträge</p>
-                    <p className="font-mono tabular-nums font-medium">{c.contractsCount}</p>
+                    <p className="font-mono tabular-nums font-medium">{displayCount}</p>
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground">Kapital</p>
-                    <Money value={c.capital} className="font-medium" />
+                    <Money value={displayCapital} className="font-medium" />
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground">Nächster Payout</p>
@@ -1049,18 +1057,43 @@ function NewContractDialog({
   clients,
   defaultClientId,
   onCreate,
+  editMode,
+  existingContract,
 }: {
   open: boolean
   onOpenChange: (b: boolean) => void
   clients: Client[]
   defaultClientId?: string
   onCreate: () => void
+  editMode?: boolean
+  existingContract?: Contract
 }) {
   const [clientId, setClientId] = useState<string>(defaultClientId ?? clients[0]?.id ?? "")
 
   useEffect(() => {
-    if (open) setClientId(defaultClientId ?? clients[0]?.id ?? "")
-  }, [open, defaultClientId, clients])
+    if (!open) return
+    if (editMode && existingContract) {
+      setClientId(existingContract.clientId)
+      const parts = existingContract.contractNo.split('-')
+      setYear(parts[2] ?? '2026')
+      setMmtt(parts[3] ?? '')
+      setSeq(parts[4] ?? '')
+      setDeposit(String(existingContract.deposit))
+      setYieldPa(String(existingContract.yieldPa))
+      setDuration(String(existingContract.durationYears))
+      setInterval(existingContract.interval)
+      setKapDate(existingContract.capitalReceivedDate ?? '')
+      setStatus(existingContract.status)
+      if (existingContract.portfolioAllocation && Object.keys(existingContract.portfolioAllocation).length > 0) {
+        setAlloc(existingContract.portfolioAllocation as typeof alloc)
+      }
+      setUploadFiles([])
+      setFormError(null)
+    } else {
+      setClientId(defaultClientId ?? clients[0]?.id ?? '')
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, editMode, existingContract, defaultClientId, clients])
   const [year, setYear] = useState("2026")
   const [mmtt, setMmtt] = useState("")
   const [seq, setSeq] = useState("")
@@ -1110,12 +1143,36 @@ function NewContractDialog({
   async function handleCreate() {
     if (!kapDate) { setFormError("Bitte Kapitaleingang-Datum eingeben."); return }
     if (allocSum !== 100) { setFormError("Portfolio-Allokation muss 100% ergeben."); return }
-    const client = clients.find((c) => c.id === clientId)
-    if (!client) return
 
     setUploading(true)
     setFormError(null)
     try {
+      if (editMode && existingContract) {
+        const res = await fetch("/api/admin/contracts", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: existingContract.id,
+            contract_number: contractNo,
+            investment_amount: Number(deposit),
+            rendite_pa: Number(yieldPa),
+            duration_years: Number(duration),
+            payout_interval: interval,
+            capital_received_date: kapDate,
+            portfolio_allocation: alloc,
+            status,
+          }),
+        })
+        const data = await res.json()
+        if (!res.ok) { setFormError(data.error || "Fehler beim Speichern."); return }
+        reset()
+        onCreate()
+        return
+      }
+
+      const client = clients.find((c) => c.id === clientId)
+      if (!client) { setFormError("Bitte einen Kunden auswählen."); return }
+
       const res = await fetch("/api/admin/contracts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1164,9 +1221,11 @@ function NewContractDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl w-full max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Neuer Vertrag</DialogTitle>
+          <DialogTitle>{editMode ? "Vertrag bearbeiten" : "Neuer Vertrag"}</DialogTitle>
           <DialogDescription>
-            Erfasse einen neuen Direktinvestitionsvertrag. Felder werden live berechnet.
+            {editMode
+              ? "Vertragskonditionen anpassen. Payout-Plan wird neu berechnet."
+              : "Erfasse einen neuen Direktinvestitionsvertrag. Felder werden live berechnet."}
           </DialogDescription>
         </DialogHeader>
 
@@ -1424,14 +1483,19 @@ type DocRecord = { id: string; file_name: string; file_url: string; uploaded_at:
 function ContractDetailSheet({
   contract,
   onClose,
+  onRefresh,
+  clients,
 }: {
   contract: Contract | null
   onClose: () => void
+  onRefresh?: () => void
+  clients: Client[]
 }) {
   const open = !!contract
   const [fetchedPayouts, setFetchedPayouts] = useState<Payout[]>([])
   const [docs, setDocs] = useState<DocRecord[]>([])
   const [docUploading, setDocUploading] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
 
   useEffect(() => {
     if (!contract) { setFetchedPayouts([]); setDocs([]); return }
@@ -1521,6 +1585,7 @@ function ContractDetailSheet({
   const open_ = totalReturn - paidOut
 
   return (
+    <>
     <Sheet open={open} onOpenChange={(b) => !b && onClose()}>
       <SheetContent className="w-full sm:max-w-2xl overflow-y-auto p-0">
         {contract && (
@@ -1578,7 +1643,7 @@ function ContractDetailSheet({
               </div>
 
               <div className="flex gap-2">
-                <Button variant="outline">
+                <Button variant="outline" onClick={() => setEditOpen(true)}>
                   <Pencil className="size-4" /> Bearbeiten
                 </Button>
               </div>
@@ -1662,6 +1727,20 @@ function ContractDetailSheet({
         )}
       </SheetContent>
     </Sheet>
+    {contract && (
+      <NewContractDialog
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        clients={clients}
+        editMode={true}
+        existingContract={contract}
+        onCreate={() => {
+          setEditOpen(false)
+          onRefresh?.()
+        }}
+      />
+    )}
+    </>
   )
 }
 
