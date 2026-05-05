@@ -1,19 +1,22 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { NewClientModal } from "@/components/admin/new-client-modal"
 import {
   Plus,
   Search,
   Upload,
   FileText,
+  Download,
   Edit,
   Trash2,
   ExternalLink,
   Eye,
   CheckCircle2,
   Pencil,
+  Loader2,
 } from "lucide-react"
+import { Skeleton } from "@/components/ui/skeleton"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -109,6 +112,7 @@ type Contract = {
   durationYears: number
   endYear: number
   status: ContractStatus
+  pdfUrl?: string
 }
 
 type Payout = {
@@ -262,12 +266,37 @@ function CardShell({
 
 export default function AdminDashboard() {
   const [page, setPage] = useState<PageKey>("uebersicht")
+  const [loading, setLoading] = useState(true)
 
   const [clients, setClients] = useState<Client[]>(initialClients)
   const [contracts, setContracts] = useState<Contract[]>(initialContracts)
   const [payouts, setPayouts] = useState<Payout[]>(initialPayouts)
   const [tickets, setTickets] = useState<Ticket[]>(initialTickets)
   const [reports, setReports] = useState<Report[]>(initialReports)
+
+  const loadData = useCallback(async () => {
+    setLoading(true)
+    try {
+      const [cr, contr, pr, sr, rr] = await Promise.all([
+        fetch("/api/admin/clients").then((r) => r.json()),
+        fetch("/api/admin/contracts").then((r) => r.json()),
+        fetch("/api/admin/payouts").then((r) => r.json()),
+        fetch("/api/admin/support").then((r) => r.json()),
+        fetch("/api/admin/reports").then((r) => r.json()),
+      ])
+      if (Array.isArray(cr.clients)) setClients(cr.clients)
+      if (Array.isArray(contr.contracts)) setContracts(contr.contracts)
+      if (Array.isArray(pr.payouts)) setPayouts(pr.payouts)
+      if (Array.isArray(sr.tickets)) setTickets(sr.tickets)
+      if (Array.isArray(rr.reports)) setReports(rr.reports)
+    } catch (err) {
+      console.error("[AdminDashboard] loadData failed:", err)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { loadData() }, [loadData])
 
   // Modal/sheet states
   const [newClientOpen, setNewClientOpen] = useState(false)
@@ -379,6 +408,7 @@ export default function AdminDashboard() {
           <KundenPage
             clients={clients}
             contracts={contracts}
+            loading={loading}
             onNewClient={() => setNewClientOpen(true)}
             onOpenProfile={(id) => {
               setProfileInitialTab("profil")
@@ -429,27 +459,9 @@ export default function AdminDashboard() {
       <NewClientModal
         open={newClientOpen}
         onClose={() => setNewClientOpen(false)}
-        onSuccess={(c) => {
-          const fullName = `${c.firstName} ${c.lastName}`.trim()
-          const initials = (c.firstName.charAt(0) + c.lastName.charAt(0)).toUpperCase()
-          setClients((arr) => [
-            {
-              id: c.client_id ?? `c${Date.now()}`,
-              initials,
-              name: fullName,
-              firstName: c.firstName,
-              lastName: c.lastName,
-              email: c.email,
-              phone: c.phone,
-              premium: c.accountStatus === "Premium" || c.accountStatus === "VIP",
-              tier: c.accountStatus,
-              contractsCount: 0,
-              capital: 0,
-              status: "Aktiv",
-              accessCode: c.accessCode,
-            },
-            ...arr,
-          ])
+        onSuccess={() => {
+          // Refresh from DB so the new client appears with correct server-side data
+          loadData()
         }}
       />
 
@@ -720,6 +732,7 @@ function UebersichtPage({
 function KundenPage({
   clients,
   contracts,
+  loading = false,
   onNewClient,
   onOpenProfile,
   onOpenContract,
@@ -727,6 +740,7 @@ function KundenPage({
 }: {
   clients: Client[]
   contracts: Contract[]
+  loading?: boolean
   onNewClient: () => void
   onOpenProfile: (id: string) => void
   onOpenContract: (id: string) => void
@@ -744,7 +758,9 @@ function KundenPage({
       <div className="flex items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Kunden</h1>
-          <p className="text-sm text-muted-foreground">{filtered.length} Einträge</p>
+          <p className="text-sm text-muted-foreground">
+            {loading ? "Wird geladen…" : `${filtered.length} Einträge`}
+          </p>
         </div>
         <Button onClick={onNewClient}>
           <Plus className="size-4" /> Neuer Kunde
@@ -758,11 +774,49 @@ function KundenPage({
           onChange={(e) => setQ(e.target.value)}
           placeholder="Suche nach Name, E-Mail, Vertragsnummer..."
           className="pl-9 h-11"
+          disabled={loading}
         />
       </div>
 
+      {loading && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {[1, 2, 3, 4].map((i) => (
+            <CardShell key={i} className="p-5" hover={false}>
+              <div className="flex items-start gap-4">
+                <Skeleton className="h-12 w-12 rounded-full shrink-0" />
+                <div className="flex-1 space-y-2">
+                  <Skeleton className="h-4 w-40" />
+                  <Skeleton className="h-3 w-56" />
+                  <div className="mt-4 grid grid-cols-3 gap-3">
+                    <Skeleton className="h-8 rounded-md" />
+                    <Skeleton className="h-8 rounded-md" />
+                    <Skeleton className="h-8 rounded-md" />
+                  </div>
+                  <div className="flex gap-2 mt-2">
+                    <Skeleton className="h-8 w-24 rounded-md" />
+                    <Skeleton className="h-8 w-28 rounded-md" />
+                  </div>
+                </div>
+              </div>
+            </CardShell>
+          ))}
+        </div>
+      )}
+
+      {!loading && filtered.length === 0 && (
+        <div className="flex flex-col items-center justify-center py-20 text-center">
+          <p className="text-lg font-semibold">Noch keine Kunden</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Lege den ersten Kunden an — der Zugangscode wird automatisch generiert.
+          </p>
+          <Button className="mt-4" onClick={onNewClient}>
+            <Plus className="size-4" /> Neuer Kunde
+          </Button>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {filtered.map((c) => {
+        {!loading && filtered.map((c) => {
           const clientContracts = contracts.filter((k) => k.clientId === c.id)
           return (
           <CardShell key={c.id} className="p-5">
@@ -944,9 +998,17 @@ function VertraegePage({
                   </TableCell>
                   <TableCell><StatusPill status={c.status} /></TableCell>
                   <TableCell>
-                    <Button size="icon" variant="ghost" className="size-8">
-                      <FileText className="size-4" />
-                    </Button>
+                    {c.pdfUrl ? (
+                      <a href={c.pdfUrl} target="_blank" rel="noopener noreferrer">
+                        <Button size="icon" variant="ghost" className="size-8">
+                          <Download className="size-4" />
+                        </Button>
+                      </a>
+                    ) : (
+                      <Button size="icon" variant="ghost" className="size-8 opacity-30" disabled>
+                        <FileText className="size-4" />
+                      </Button>
+                    )}
                   </TableCell>
                   <TableCell className="text-right">
                     <Button size="sm" variant="ghost" onClick={() => onOpenContract(c.id)}>
@@ -994,6 +1056,8 @@ function NewContractDialog({
   const [duration, setDuration] = useState("5")
   const [interval, setInterval] = useState<Interval>("Jährlich")
   const [kapDate, setKapDate] = useState("")
+  const [pdfFile, setPdfFile] = useState<File | null>(null)
+  const [uploading, setUploading] = useState(false)
   const [alloc, setAlloc] = useState({
     Technologie: 25,
     Gesundheit: 15,
@@ -1024,11 +1088,33 @@ function NewContractDialog({
   const reset = () => {
     setMmtt("")
     setSeq("")
+    setPdfFile(null)
   }
 
-  function handleCreate() {
+  async function handleCreate() {
     const client = clients.find((c) => c.id === clientId)
     if (!client) return
+
+    let pdfUrl: string | undefined
+
+    if (pdfFile) {
+      setUploading(true)
+      try {
+        const fd = new FormData()
+        fd.append("file", pdfFile)
+        fd.append("client_id", clientId)
+        fd.append("contract_number", contractNo)
+        const res = await fetch("/api/admin/upload-contract-pdf", { method: "POST", body: fd })
+        const data = await res.json()
+        if (res.ok && data.pdf_url) pdfUrl = data.pdf_url
+        else console.error("[NewContractDialog] PDF upload error:", data.error)
+      } catch (err) {
+        console.error("[NewContractDialog] PDF upload exception:", err)
+      } finally {
+        setUploading(false)
+      }
+    }
+
     onCreate({
       contractNo,
       clientId,
@@ -1040,6 +1126,7 @@ function NewContractDialog({
       durationYears: Number(duration),
       endYear: Number(year) + Number(duration),
       status,
+      pdfUrl,
     })
     reset()
   }
@@ -1227,11 +1314,26 @@ function NewContractDialog({
           {/* Section 6 — PDF */}
           <section className="space-y-3">
             <h3 className="text-sm font-semibold">6 · PDF</h3>
-            <label className="flex flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed border-border bg-muted/30 px-6 py-10 text-center text-sm text-muted-foreground cursor-pointer hover:border-primary/40 hover:bg-primary/5 transition">
+            <label className={cn(
+              "flex flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed px-6 py-10 text-center text-sm cursor-pointer transition",
+              pdfFile
+                ? "border-[var(--fin-gain)]/50 bg-[var(--fin-gain)]/5 text-[var(--fin-gain)]"
+                : "border-border bg-muted/30 text-muted-foreground hover:border-primary/40 hover:bg-primary/5",
+            )}>
               <Upload className="size-6" />
-              Vertragsdokument hochladen (.pdf)
-              <input type="file" accept=".pdf" className="hidden" />
+              {pdfFile ? pdfFile.name : "Vertragsdokument hochladen (.pdf)"}
+              <input
+                type="file"
+                accept=".pdf"
+                className="hidden"
+                onChange={(e) => setPdfFile(e.target.files?.[0] ?? null)}
+              />
             </label>
+            {pdfFile && (
+              <p className="text-xs text-[var(--fin-gain)]">
+                ✓ {pdfFile.name} — wird beim Speichern hochgeladen
+              </p>
+            )}
           </section>
 
           {/* Section 7 — Status */}
@@ -1249,9 +1351,13 @@ function NewContractDialog({
         </div>
 
         <DialogFooter className="gap-2 sm:gap-2">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Abbrechen</Button>
-          <Button onClick={handleCreate} disabled={allocSum !== 100} className="flex-1 sm:flex-none">
-            Speichern
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={uploading}>Abbrechen</Button>
+          <Button onClick={handleCreate} disabled={allocSum !== 100 || uploading} className="flex-1 sm:flex-none">
+            {uploading ? (
+              <><Loader2 className="size-4 animate-spin" /> PDF wird hochgeladen…</>
+            ) : (
+              "Speichern"
+            )}
           </Button>
         </DialogFooter>
       </DialogContent>
