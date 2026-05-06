@@ -2059,7 +2059,7 @@ function PayoutsPage({
     })
     .reduce((s, p) => s + (Number(p.amount) || 0), 0)
   const overdue = payouts
-    .filter((p) => p.status === "Ausstehend" && new Date(p.date) < today)
+    .filter((p) => p.status === "Überfällig")
     .reduce((s, p) => s + (Number(p.amount) || 0), 0)
 
   const filtered = payouts.filter((p) => {
@@ -2164,7 +2164,7 @@ function PayoutsPage({
                     ) : "—"}
                   </TableCell>
                   <TableCell className="text-right">
-                    {p.status === "Ausstehend" ? (
+                    {p.status === "Ausstehend" || p.status === "Überfällig" ? (
                       <Button size="sm" onClick={() => onErfassen(p.id)}>
                         Erfassen
                       </Button>

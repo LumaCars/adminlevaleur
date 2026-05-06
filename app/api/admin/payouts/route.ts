@@ -48,17 +48,37 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
+  const todayStr = new Date().toISOString().split('T')[0]
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const payouts = (data ?? []).map((row: any) => ({
-    id: String(row.id),
-    clientName: `${row.first_name ?? ''} ${row.last_name ?? ''}`.trim() || row.client_name || '',
-    contractNo: row.contract_number ?? row.contract_no ?? '',
-    amount: parseFloat(String(row.amount ?? 0)) || 0,
-    date: row.scheduled_date ?? row.paid_date ?? row.date ?? '',
-    interval: row.payout_interval ?? row.interval ?? 'Jährlich',
-    status: row.status ?? 'Ausstehend',
-    receipt: row.proof_link ?? row.receipt ?? undefined,
-  }))
+  const payouts = (data ?? []).map((row: any) => {
+    const dbStatus: string = row.status ?? 'Ausstehend'
+    const scheduledDate: string = row.scheduled_date ?? ''
+    const derivedStatus =
+      dbStatus === 'Ausstehend' && scheduledDate && scheduledDate < todayStr
+        ? 'Überfällig'
+        : dbStatus
+
+    return {
+      id: String(row.id),
+      clientName: `${row.first_name ?? ''} ${row.last_name ?? ''}`.trim() || row.client_name || '',
+      contractNo: row.contract_number ?? row.contract_no ?? '',
+      amount: parseFloat(String(row.amount ?? 0)) || 0,
+      date: scheduledDate || row.paid_date || row.date || '',
+      interval: row.payout_interval ?? row.interval ?? 'Jährlich',
+      status: derivedStatus,
+      receipt: row.proof_link ?? row.receipt ?? undefined,
+    }
+  })
+
+  // Sort: Überfällig ASC, Ausstehend ASC, Ausgezahlt DESC
+  const rank = (s: string) => (s === 'Überfällig' ? 1 : s === 'Ausstehend' ? 2 : 3)
+  payouts.sort((a, b) => {
+    const rankDiff = rank(a.status) - rank(b.status)
+    if (rankDiff !== 0) return rankDiff
+    if (a.status === 'Ausgezahlt') return b.date.localeCompare(a.date) // DESC
+    return a.date.localeCompare(b.date) // ASC
+  })
 
   console.log('[/api/admin/payouts] Returning', payouts.length, 'payouts')
   return NextResponse.json({ payouts })
