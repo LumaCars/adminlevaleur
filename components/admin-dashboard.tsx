@@ -689,7 +689,7 @@ function UebersichtPage({
                     <TableCell className="text-right">
                       <Money value={p.amount} />
                     </TableCell>
-                    <TableCell className="font-mono text-xs">{p.date}</TableCell>
+                    <TableCell className="font-mono text-xs">{p.date ? new Date(p.date).toLocaleDateString('de-AT') : '—'}</TableCell>
                     <TableCell>{p.interval}</TableCell>
                     <TableCell>
                       <StatusPill status={p.status} />
@@ -1996,7 +1996,7 @@ function ClientProfileSheet({
                 {payouts.map((p) => (
                   <div key={p.id} className="flex items-center justify-between rounded-md border border-border p-3">
                     <div>
-                      <p className="font-mono text-xs">{p.date}</p>
+                      <p className="font-mono text-xs">{p.date ? new Date(p.date).toLocaleDateString('de-AT') : '—'}</p>
                       <Money value={p.amount} className="text-sm font-medium" />
                     </div>
                     <StatusPill status={p.status} />
@@ -2045,9 +2045,22 @@ function PayoutsPage({
   const [month, setMonth] = useState("all")
   const [status, setStatus] = useState("all")
 
-  const total = payouts.filter((p) => p.status === "Ausgezahlt").reduce((s, p) => s + p.amount, 0)
-  const pending = payouts.filter((p) => p.status === "Ausstehend").reduce((s, p) => s + p.amount, 0)
-  const overdue = payouts.filter((p) => p.status === "Überfällig").reduce((s, p) => s + p.amount, 0)
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1)
+  const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0)
+
+  const total = payouts.filter((p) => p.status === "Ausgezahlt").reduce((s, p) => s + (Number(p.amount) || 0), 0)
+  const currentMonthDue = payouts
+    .filter((p) => {
+      if (p.status !== "Ausstehend") return false
+      const d = new Date(p.date)
+      return d >= monthStart && d <= monthEnd
+    })
+    .reduce((s, p) => s + (Number(p.amount) || 0), 0)
+  const overdue = payouts
+    .filter((p) => p.status === "Ausstehend" && new Date(p.date) < today)
+    .reduce((s, p) => s + (Number(p.amount) || 0), 0)
 
   const filtered = payouts.filter((p) => {
     if (client !== "all" && p.clientName !== client) return false
@@ -2069,14 +2082,14 @@ function PayoutsPage({
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <StatCard label="Gesamt ausgezahlt" value={fmtEUR(total)} hint="Bislang abgewickelt" />
         <StatCard
-          label="Ausstehend"
-          value={fmtEUR(pending)}
-          badge={{ text: `${payouts.filter((p) => p.status === "Ausstehend").length} offen`, tone: "amber" }}
+          label="Diesen Monat fällig"
+          value={fmtEUR(currentMonthDue)}
+          badge={{ text: `${payouts.filter((p) => { const d = new Date(p.date); return p.status === "Ausstehend" && d >= monthStart && d <= monthEnd }).length} ausstehend`, tone: "amber" }}
         />
         <StatCard
           label="Überfällig"
           value={fmtEUR(overdue)}
-          badge={overdue > 0 ? { text: "Aktion erforderlich", tone: "red" } : { text: "0", tone: "green" }}
+          badge={overdue > 0 ? { text: "Aktion erforderlich", tone: "red" } : { text: "Keine", tone: "green" }}
         />
       </div>
 
@@ -2137,7 +2150,7 @@ function PayoutsPage({
                 <TableRow key={p.id}>
                   <TableCell>{p.clientName}</TableCell>
                   <TableCell className="font-mono text-xs">{p.contractNo}</TableCell>
-                  <TableCell className="font-mono text-xs">{p.date}</TableCell>
+                  <TableCell className="font-mono text-xs">{p.date ? new Date(p.date).toLocaleDateString('de-AT') : '—'}</TableCell>
                   <TableCell className="text-right">
                     <Money value={p.amount} />
                   </TableCell>

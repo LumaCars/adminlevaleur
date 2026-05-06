@@ -37,7 +37,7 @@ export async function GET() {
     contractsCount: Number(
       row.contract_count ?? row.contracts_count ?? row.contract_count_active ?? 0
     ),
-    capital: parseFloat(String(row.total_investment ?? row.total_capital ?? row.capital ?? row.investment_total ?? 0)) || 0,
+    capital: parseFloat(row.total_investment) || 0,
     nextPayout: fmtDateStr(row.next_payout_date ?? row.next_payout ?? row.nextpayout),
     notes: row.notes ?? undefined,
     status: 'Aktiv' as const,
