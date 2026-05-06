@@ -177,12 +177,11 @@ const activities: { dot: string; text: string; time: string }[] = []
 // ----------------------------------------------------------------------------
 
 const fmtEUR = (n: number) =>
-  new Intl.NumberFormat("de-DE", {
+  new Intl.NumberFormat("de-AT", {
     style: "currency",
     currency: "EUR",
-    minimumFractionDigits: 0,
     maximumFractionDigits: 0,
-  }).format(n)
+  }).format(Number(n) || 0)
 
 const fmtPct = (n: number) =>
   new Intl.NumberFormat("de-DE", {
@@ -609,7 +608,7 @@ function UebersichtPage({
 }) {
   const totalCapital = contracts
     .filter((c) => c.status === "Aktiv")
-    .reduce((s, c) => s + c.deposit, 0)
+    .reduce((s, c) => s + (Number(c.deposit) || 0), 0)
   const openTickets = tickets.filter((t) => t.status === "Offen").length
 
   const upcoming = payouts.filter((p) => p.status === "Ausstehend")
@@ -828,9 +827,9 @@ function KundenPage({
         {!loading && filtered.map((c) => {
           const clientContracts = contracts.filter((k) => k.clientId === c.id)
           const displayCount = c.contractsCount || clientContracts.length
-          const displayCapital = c.capital || clientContracts
+          const displayCapital = Number(c.capital) || clientContracts
             .filter((k) => k.status === "Aktiv")
-            .reduce((s, k) => s + k.deposit, 0)
+            .reduce((s, k) => s + (Number(k.deposit) || 0), 0)
           return (
           <CardShell key={c.id} className="p-5">
             <div className="flex items-start gap-4">

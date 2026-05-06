@@ -24,8 +24,8 @@ export async function GET(req: NextRequest) {
     contractNo: row.contract_number ?? row.contract_no ?? '',
     clientId: String(row.client_id ?? ''),
     clientName: `${row.first_name ?? ''} ${row.last_name ?? ''}`.trim() || row.client_name || '',
-    deposit: Number(row.investment_amount ?? row.deposit ?? 0),
-    yieldPa: Number(row.rendite_pa ?? row.yield_pa ?? 0),
+    deposit: parseFloat(String(row.investment_amount ?? row.deposit ?? 0)) || 0,
+    yieldPa: parseFloat(String(row.rendite_pa ?? row.yield_pa ?? 0)) || 0,
     interval: row.payout_interval ?? row.interval ?? 'Jährlich',
     startYear: Number(
       row.contract_start_date
