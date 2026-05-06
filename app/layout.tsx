@@ -19,6 +19,7 @@ export const metadata: Metadata = {
   title: "Le Valeur Management AG · Admin Dashboard",
   description: "Internes Admin Dashboard für Le Valeur Management AG",
   generator: "v0.app",
+  icons: { icon: '/logo.png' },
 }
 
 export default function RootLayout({

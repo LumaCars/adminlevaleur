@@ -328,9 +328,7 @@ export default function AdminDashboard() {
         <div className="flex h-full items-center justify-between px-6">
           {/* Left */}
           <div className="flex items-center gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground font-semibold">
-              V
-            </div>
+            <img src="/logo.png" className="w-8 h-8 object-contain" alt="Le Valeur" />
             <span className="font-semibold tracking-tight">Le Valeur</span>
             <span className="inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
               Admin
