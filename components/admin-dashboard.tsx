@@ -689,7 +689,7 @@ function UebersichtPage({
                     <TableCell className="text-right">
                       <Money value={p.amount} />
                     </TableCell>
-                    <TableCell className="font-mono text-xs">{p.date ? new Date(p.date).toLocaleDateString('de-AT') : '—'}</TableCell>
+                    <TableCell className="font-mono text-xs">{fmtDate(parseISO(p.date))}</TableCell>
                     <TableCell>{p.interval}</TableCell>
                     <TableCell>
                       <StatusPill status={p.status} />
@@ -1996,7 +1996,7 @@ function ClientProfileSheet({
                 {payouts.map((p) => (
                   <div key={p.id} className="flex items-center justify-between rounded-md border border-border p-3">
                     <div>
-                      <p className="font-mono text-xs">{p.date ? new Date(p.date).toLocaleDateString('de-AT') : '—'}</p>
+                      <p className="font-mono text-xs">{fmtDate(parseISO(p.date))}</p>
                       <Money value={p.amount} className="text-sm font-medium" />
                     </div>
                     <StatusPill status={p.status} />
@@ -2150,7 +2150,7 @@ function PayoutsPage({
                 <TableRow key={p.id}>
                   <TableCell>{p.clientName}</TableCell>
                   <TableCell className="font-mono text-xs">{p.contractNo}</TableCell>
-                  <TableCell className="font-mono text-xs">{p.date ? new Date(p.date).toLocaleDateString('de-AT') : '—'}</TableCell>
+                  <TableCell className="font-mono text-xs">{fmtDate(parseISO(p.date))}</TableCell>
                   <TableCell className="text-right">
                     <Money value={p.amount} />
                   </TableCell>
