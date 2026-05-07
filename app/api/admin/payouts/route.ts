@@ -61,6 +61,7 @@ export async function GET(req: NextRequest) {
 
     return {
       id: String(row.id),
+      clientId: String(row.client_id ?? ''),
       clientName: `${row.first_name ?? ''} ${row.last_name ?? ''}`.trim() || row.client_name || '',
       contractNo: row.contract_number ?? row.contract_no ?? '',
       amount: parseFloat(String(row.amount ?? 0)) || 0,
@@ -82,4 +83,21 @@ export async function GET(req: NextRequest) {
 
   console.log('[/api/admin/payouts] Returning', payouts.length, 'payouts')
   return NextResponse.json({ payouts })
+}
+
+export async function PATCH(req: NextRequest) {
+  const { id, proof_link, paid_date } = await req.json()
+  if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
+
+  const { error } = await supabaseAdmin
+    .from('payouts')
+    .update({
+      status: 'Ausgezahlt',
+      proof_link: proof_link || null,
+      paid_date: paid_date || new Date().toISOString().split('T')[0],
+    })
+    .eq('id', id)
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  return NextResponse.json({ success: true })
 }

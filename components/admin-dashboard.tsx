@@ -15,6 +15,9 @@ import {
   CheckCircle2,
   Pencil,
   Loader2,
+  Copy,
+  Wallet,
+  CreditCard,
 } from "lucide-react"
 import { Skeleton } from "@/components/ui/skeleton"
 
@@ -121,6 +124,7 @@ type Contract = {
 
 type Payout = {
   id: string
+  clientId: string
   clientName: string
   contractNo: string
   amount: number
@@ -129,6 +133,9 @@ type Payout = {
   status: PayoutStatus
   receipt?: string
 }
+
+type WalletAddress = { id: string; coin: string; address: string; exchange?: string }
+type BbCard = { id: string; card_number: string; email: string }
 
 type Ticket = {
   id: string
@@ -1774,12 +1781,15 @@ function ClientProfileSheet({
   onAddContract: (clientId: string) => void
 }) {
   const [draft, setDraft] = useState<Client | null>(client)
-  const [tab, setTab] = useState<"profil" | "vertraege" | "payouts" | "support">(initialTab)
+  const [tab, setTab] = useState<"profil" | "vertraege" | "payouts" | "support" | "zahlungsinfos">(initialTab)
   const [clientContracts, setClientContracts] = useState<Contract[]>([])
   const [contractsLoading, setContractsLoading] = useState(false)
   const [codeState, setCodeState] = useState<"idle" | "loading" | "success" | "error">("idle")
   const [newCode, setNewCode] = useState<string | null>(null)
   const [codeError, setCodeError] = useState<string | null>(null)
+  const [wallets, setWallets] = useState<WalletAddress[]>([])
+  const [cards, setCards] = useState<BbCard[]>([])
+  const [paymentLoading, setPaymentLoading] = useState(false)
 
   // Sync draft when client changes
   useEffect(() => {
@@ -1801,6 +1811,16 @@ function ClientProfileSheet({
       .then((d) => { if (Array.isArray(d.contracts)) setClientContracts(d.contracts) })
       .catch(console.error)
       .finally(() => setContractsLoading(false))
+  }, [client])
+  // Fetch payment info for this client
+  useEffect(() => {
+    if (!client) { setWallets([]); setCards([]); return }
+    setPaymentLoading(true)
+    fetch(`/api/admin/payment-info?client_id=${client.id}`)
+      .then(r => r.json())
+      .then(d => { setWallets(d.wallets ?? []); setCards(d.cards ?? []) })
+      .catch(console.error)
+      .finally(() => setPaymentLoading(false))
   }, [client])
 
   async function handleResetCode() {
@@ -1843,11 +1863,12 @@ function ClientProfileSheet({
               <SheetDescription>{client.email}</SheetDescription>
             </SheetHeader>
             <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)} className="w-full">
-              <TabsList className="mx-6 mt-4">
+              <TabsList className="mx-6 mt-4 flex-wrap h-auto gap-1">
                 <TabsTrigger value="profil">Profil</TabsTrigger>
                 <TabsTrigger value="vertraege">Verträge</TabsTrigger>
                 <TabsTrigger value="payouts">Payouts</TabsTrigger>
                 <TabsTrigger value="support">Support</TabsTrigger>
+                <TabsTrigger value="zahlungsinfos">Zahlung</TabsTrigger>
               </TabsList>
 
               <TabsContent value="profil" className="px-6 py-4 space-y-4">
@@ -2019,6 +2040,47 @@ function ClientProfileSheet({
                 ))}
                 {tickets.length === 0 && (
                   <p className="text-sm text-muted-foreground">Keine Tickets.</p>
+                )}
+              </TabsContent>
+
+              <TabsContent value="zahlungsinfos" className="px-6 py-4 space-y-4">
+                <p className="text-xs text-muted-foreground">Vom Kunden eingetragen · schreibgeschützt</p>
+                {paymentLoading && <div className="space-y-2">{[1,2].map(i => <Skeleton key={i} className="h-12 w-full rounded-lg" />)}</div>}
+                {!paymentLoading && (
+                  <>
+                    <div>
+                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-2 flex items-center gap-1.5">
+                        <Wallet className="size-3" /> Wallet-Adressen
+                      </p>
+                      {wallets.length > 0 ? wallets.map((w) => (
+                        <div key={w.id} className="flex items-center justify-between gap-2 rounded-md border border-border p-3 mb-2 text-xs">
+                          <span className="font-medium uppercase text-primary w-10 shrink-0">{w.coin}</span>
+                          <span className="font-mono text-muted-foreground truncate flex-1">{w.address}</span>
+                          {w.exchange && <span className="text-muted-foreground shrink-0">[{w.exchange}]</span>}
+                          <button
+                            onClick={() => navigator.clipboard.writeText(w.address)}
+                            className="shrink-0 p-1 hover:bg-sidebar-accent rounded"
+                            title="Kopieren"
+                          >
+                            <Copy className="size-3 text-muted-foreground" />
+                          </button>
+                        </div>
+                      )) : <p className="text-sm text-muted-foreground">Keine Wallet-Adressen.</p>}
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-2 flex items-center gap-1.5">
+                        <CreditCard className="size-3" /> Borderless Banking Karte
+                      </p>
+                      {cards.length > 0 ? cards.map((c) => (
+                        <div key={c.id} className="flex items-center gap-3 rounded-md border border-border p-3 mb-2 text-xs">
+                          <CreditCard className="size-4 text-muted-foreground shrink-0" />
+                          <span className="font-mono">**** **** **** {c.card_number.slice(-4)}</span>
+                          <span className="text-muted-foreground">·</span>
+                          <span className="text-muted-foreground">{c.email}</span>
+                        </div>
+                      )) : <p className="text-sm text-muted-foreground">Keine BB-Karte.</p>}
+                    </div>
+                  </>
                 )}
               </TabsContent>
             </Tabs>
@@ -2195,9 +2257,46 @@ function PayoutEntryDialog({
   onClose: () => void
   onConfirm: (receipt: string) => void
 }) {
-  const [date, setDate] = useState("")
+  const [date, setDate] = useState(new Date().toISOString().split('T')[0])
   const [method, setMethod] = useState("Crypto")
   const [receipt, setReceipt] = useState("")
+  const [saving, setSaving] = useState(false)
+  const [wallets, setWallets] = useState<WalletAddress[]>([])
+  const [cards, setCards] = useState<BbCard[]>([])
+  const [copied, setCopied] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!payout?.clientId) { setWallets([]); setCards([]); return }
+    fetch(`/api/admin/payment-info?client_id=${payout.clientId}`)
+      .then(r => r.json())
+      .then(d => { setWallets(d.wallets ?? []); setCards(d.cards ?? []) })
+      .catch(() => {})
+  }, [payout?.clientId])
+
+  useEffect(() => {
+    if (!payout) { setReceipt(""); setSaving(false) }
+  }, [payout])
+
+  const copyToClipboard = (text: string, key: string) => {
+    navigator.clipboard.writeText(text)
+    setCopied(key)
+    setTimeout(() => setCopied(null), 1500)
+  }
+
+  const handleConfirm = async () => {
+    if (!payout) return
+    setSaving(true)
+    try {
+      await fetch('/api/admin/payouts', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: payout.id, proof_link: receipt || null, paid_date: date }),
+      })
+      onConfirm(receipt || "—")
+    } finally {
+      setSaving(false)
+    }
+  }
 
   return (
     <Dialog open={!!payout} onOpenChange={(b) => !b && onClose()}>
@@ -2223,6 +2322,46 @@ function PayoutEntryDialog({
                 <Label>Betrag</Label>
                 <Input value={fmtEUR(payout.amount)} readOnly className="bg-muted font-mono" />
               </div>
+
+              {/* Client payment info */}
+              {wallets.length > 0 && (
+                <div className="rounded-md border border-border bg-secondary/30 p-3 space-y-2">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                    <Wallet className="size-3" /> Gespeicherte Wallet-Adressen
+                  </p>
+                  {wallets.map((w) => (
+                    <div key={w.id} className="flex items-center justify-between gap-2 text-xs">
+                      <span className="font-medium uppercase text-primary w-10 shrink-0">{w.coin}</span>
+                      <span className="font-mono text-muted-foreground truncate flex-1">{w.address}</span>
+                      {w.exchange && <span className="text-muted-foreground shrink-0">[{w.exchange}]</span>}
+                      <button
+                        onClick={() => copyToClipboard(w.address, w.id)}
+                        className="shrink-0 p-1 hover:bg-sidebar-accent rounded"
+                      >
+                        <Copy className={cn("size-3", copied === w.id ? "text-primary" : "text-muted-foreground")} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {cards.length > 0 && (
+                <div className="rounded-md border border-border bg-secondary/30 p-3 space-y-2">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                    <CreditCard className="size-3" /> Borderless Banking Karte
+                  </p>
+                  {cards.map((c) => (
+                    <div key={c.id} className="flex items-center gap-3 text-xs">
+                      <span className="font-mono">**** **** **** {c.card_number.slice(-4)}</span>
+                      <span className="text-muted-foreground">·</span>
+                      <span className="text-muted-foreground">{c.email}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {wallets.length === 0 && cards.length === 0 && (
+                <p className="text-xs text-muted-foreground italic">Keine Zahlungsinformationen vom Kunden hinterlegt.</p>
+              )}
+
               <div className="space-y-1.5">
                 <Label>Auszahlungsdatum</Label>
                 <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
@@ -2249,12 +2388,12 @@ function PayoutEntryDialog({
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={onClose}>Abbrechen</Button>
-              <Button onClick={() => onConfirm(receipt || "—")}>
-                <CheckCircle2 className="size-4" /> Als ausgezahlt markieren
+              <Button variant="outline" onClick={onClose} disabled={saving}>Abbrechen</Button>
+              <Button onClick={handleConfirm} disabled={saving}>
+                {saving ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}
+                Als ausgezahlt markieren
               </Button>
             </DialogFooter>
-            {/* TODO: Supabase sync — payouts table */}
           </>
         )}
       </DialogContent>
