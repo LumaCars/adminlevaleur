@@ -57,7 +57,18 @@ export async function POST(req: NextRequest) {
 
   if (!emailRes.ok) {
     console.error('[reset-client-code] Email send failed:', emailBody)
-    // Non-fatal — code is already reset, just warn
+  }
+
+  // Close any open RESET-REQUEST support tickets for this client
+  console.log('[reset-client-code] Step 4: Closing open reset support tickets')
+  await supabaseAdmin
+    .from('support_requests')
+    .update({ status: 'Gelöst' })
+    .eq('client_id', client_id)
+    .eq('contract_number', 'RESET-REQUEST')
+    .neq('status', 'Gelöst')
+
+  if (!emailRes.ok) {
     return NextResponse.json({
       success: true,
       temp_code: newCode,

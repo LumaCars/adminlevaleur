@@ -2415,7 +2415,12 @@ function SupportPage({
   const offen = tickets.filter((t) => t.status === "Offen").length
   const inProg = tickets.filter((t) => t.status === "In Bearbeitung").length
 
+  const isReset = (t: Ticket) => t.contractNo === "RESET-REQUEST"
+
   const sorted = [...tickets].sort((a, b) => {
+    // RESET-REQUEST tickets always come first
+    if (isReset(a) && !isReset(b)) return -1
+    if (!isReset(a) && isReset(b)) return 1
     const order = { Offen: 0, "In Bearbeitung": 1, Gelöst: 2 }
     return order[a.status] - order[b.status]
   })
@@ -2448,8 +2453,16 @@ function SupportPage({
           </TableHeader>
           <TableBody>
             {sorted.map((t) => (
-              <TableRow key={t.id}>
-                <TableCell><StatusPill status={t.status} /></TableCell>
+              <TableRow key={t.id} className={isReset(t) ? "bg-amber-500/5" : undefined}>
+                <TableCell>
+                  {isReset(t) ? (
+                    <span className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-semibold bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                      🔑 Code-Reset
+                    </span>
+                  ) : (
+                    <StatusPill status={t.status} />
+                  )}
+                </TableCell>
                 <TableCell className="font-mono text-xs">{t.contractNo}</TableCell>
                 <TableCell>{t.clientName}</TableCell>
                 <TableCell>{t.subject}</TableCell>
