@@ -2075,11 +2075,11 @@ function ClientProfileSheet({
                         <CreditCard className="size-3" /> Borderless Banking Karte
                       </p>
                       {cards.length > 0 ? cards.map((c) => (
-                        <div key={c.id} className="flex items-center gap-3 rounded-md border border-border p-3 mb-2 text-xs">
+                        <div key={c.id} className="flex items-center gap-3 rounded-md border border-border bg-[#1E4535]/40 p-3 mb-2 text-xs">
                           <CreditCard className="size-4 text-muted-foreground shrink-0" />
-                          <span className="font-mono">**** **** **** {c.card_number.slice(-4)}</span>
+                          <span className="font-mono text-foreground">**** **** **** {c.card_number.slice(-4)}</span>
                           <span className="text-muted-foreground">·</span>
-                          <span className="text-muted-foreground">{c.email}</span>
+                          <span className="text-[#7A9E88]">{c.email}</span>
                         </div>
                       )) : <p className="text-sm text-muted-foreground">Keine BB-Karte.</p>}
                     </div>
@@ -2354,9 +2354,9 @@ function PayoutEntryDialog({
                   </p>
                   {cards.map((c) => (
                     <div key={c.id} className="flex items-center gap-3 text-xs">
-                      <span className="font-mono">**** **** **** {c.card_number.slice(-4)}</span>
+                      <span className="font-mono text-foreground">**** **** **** {c.card_number.slice(-4)}</span>
                       <span className="text-muted-foreground">·</span>
-                      <span className="text-muted-foreground">{c.email}</span>
+                      <span className="text-[#7A9E88]">{c.email}</span>
                     </div>
                   ))}
                 </div>
