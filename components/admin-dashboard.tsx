@@ -142,6 +142,9 @@ type Ticket = {
   status: TicketStatus
   contractNo: string
   clientName: string
+  firstName?: string
+  lastName?: string
+  email?: string
   subject: string
   amount?: number
   receivedAt: string
@@ -2455,16 +2458,22 @@ function SupportPage({
             {sorted.map((t) => (
               <TableRow key={t.id} className={isReset(t) ? "bg-amber-500/5" : undefined}>
                 <TableCell>
+                  <StatusPill status={t.status} />
+                </TableCell>
+                <TableCell className="font-mono text-xs">
                   {isReset(t) ? (
                     <span className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-semibold bg-amber-500/15 text-amber-400 border border-amber-500/30">
                       🔑 Code-Reset
                     </span>
                   ) : (
-                    <StatusPill status={t.status} />
+                    t.contractNo
                   )}
                 </TableCell>
-                <TableCell className="font-mono text-xs">{t.contractNo}</TableCell>
-                <TableCell>{t.clientName}</TableCell>
+                <TableCell>
+                  {t.firstName || t.lastName
+                    ? `${t.firstName ?? ''} ${t.lastName ?? ''}`.trim()
+                    : t.clientName || t.email || '—'}
+                </TableCell>
                 <TableCell>{t.subject}</TableCell>
                 <TableCell className="text-right">
                   {t.amount ? <Money value={t.amount} /> : <span className="text-muted-foreground">—</span>}
@@ -2514,11 +2523,27 @@ function TicketDetailDialog({
           <>
             <DialogHeader>
               <DialogTitle>{ticket.subject}</DialogTitle>
-              <DialogDescription>
-                {ticket.clientName} · <span className="font-mono">{ticket.contractNo}</span> · {ticket.receivedAt}
-              </DialogDescription>
             </DialogHeader>
             <div className="space-y-3">
+              <div className="rounded-md bg-muted p-3 text-sm space-y-1">
+                <div>
+                  <span className="text-muted-foreground">Von: </span>
+                  {ticket.firstName || ticket.lastName
+                    ? `${ticket.firstName ?? ''} ${ticket.lastName ?? ''}`.trim()
+                    : ticket.clientName || '—'}
+                  {ticket.email && (
+                    <span className="text-muted-foreground"> ({ticket.email})</span>
+                  )}
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Anfrage: </span>
+                  {ticket.subject}
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Eingegangen: </span>
+                  {ticket.receivedAt}
+                </div>
+              </div>
               <div className="rounded-md bg-muted p-3 text-sm whitespace-pre-wrap">
                 {ticket.message}
               </div>

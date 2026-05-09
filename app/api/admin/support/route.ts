@@ -14,16 +14,40 @@ export async function GET() {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const tickets = (data ?? []).map((row: any) => ({
-    id: String(row.id),
-    status: row.status ?? 'Offen',
-    contractNo: row.contract_no ?? '',
-    clientName: row.client_name ?? '',
-    subject: row.subject ?? '',
-    amount: row.amount ? Number(row.amount) : undefined,
-    receivedAt: row.received_at ?? row.created_at ?? '',
-    message: row.message ?? undefined,
-  }))
+  const tickets = (data ?? []).map((row: any) => {
+    const rawDate = row.received_at ?? row.created_at ?? ''
+    let receivedAt = rawDate
+    if (rawDate) {
+      try {
+        const d = new Date(rawDate)
+        receivedAt =
+          d.toLocaleDateString('de-AT') +
+          ' · ' +
+          d.toLocaleTimeString('de-AT', { hour: '2-digit', minute: '2-digit' })
+      } catch {
+        receivedAt = rawDate
+      }
+    }
+
+    const firstName: string = row.first_name ?? ''
+    const lastName: string = row.last_name ?? ''
+    const clientName: string =
+      row.client_name ?? (firstName || lastName ? `${firstName} ${lastName}`.trim() : '')
+
+    return {
+      id: String(row.id),
+      status: row.status ?? 'Offen',
+      contractNo: row.contract_number ?? row.contract_no ?? '',
+      clientName,
+      firstName,
+      lastName,
+      email: row.email ?? '',
+      subject: row.subject ?? '',
+      amount: row.amount ? Number(row.amount) : undefined,
+      receivedAt,
+      message: row.message ?? undefined,
+    }
+  })
 
   console.log('[/api/admin/support] Returning', tickets.length, 'tickets')
   return NextResponse.json({ tickets })
