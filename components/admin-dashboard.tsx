@@ -164,6 +164,8 @@ type Report = {
   scope: "Allgemein" | "Kundenspezifisch"
   clientId?: string
   clientName?: string
+  fileUrl?: string
+  fileName?: string
 }
 
 // ----------------------------------------------------------------------------
@@ -2586,6 +2588,94 @@ function TicketDetailDialog({
 // Page: Berichte
 // ----------------------------------------------------------------------------
 
+function ClientCombobox({
+  clients,
+  value,
+  onChange,
+}: {
+  clients: Client[]
+  value: string
+  onChange: (id: string) => void
+}) {
+  const [query, setQuery] = useState("")
+  const [open, setOpen] = useState(false)
+  const selected = clients.find((c) => c.id === value) ?? null
+
+  const filtered = useMemo(() => {
+    if (!query) return clients.slice(0, 30)
+    const q = query.toLowerCase()
+    return clients.filter(
+      (c) =>
+        c.name.toLowerCase().includes(q) ||
+        (c.email ?? "").toLowerCase().includes(q)
+    ).slice(0, 20)
+  }, [clients, query])
+
+  function initials(name: string) {
+    const parts = name.trim().split(" ")
+    return parts.length >= 2
+      ? `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase()
+      : name.slice(0, 2).toUpperCase()
+  }
+
+  return (
+    <div className="relative">
+      {selected ? (
+        <div className="flex items-center gap-2 rounded-md border border-border bg-secondary px-3 py-2">
+          <div className="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center text-xs font-semibold text-primary shrink-0">
+            {initials(selected.name)}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium truncate">{selected.name}</p>
+            <p className="text-xs text-muted-foreground truncate">{selected.email}</p>
+          </div>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="size-6 shrink-0 text-muted-foreground hover:text-foreground"
+            onClick={() => { onChange(""); setQuery(""); }}
+          >
+            ×
+          </Button>
+        </div>
+      ) : (
+        <Input
+          placeholder="Kunde suchen…"
+          value={query}
+          onChange={(e) => { setQuery(e.target.value); setOpen(true) }}
+          onFocus={() => setOpen(true)}
+          onBlur={() => setTimeout(() => setOpen(false), 150)}
+          autoComplete="off"
+        />
+      )}
+      {open && !selected && (
+        <div className="absolute z-50 mt-1 w-full rounded-md border border-border bg-popover shadow-lg max-h-60 overflow-y-auto">
+          {filtered.length === 0 ? (
+            <p className="px-3 py-2 text-sm text-muted-foreground">Keine Ergebnisse</p>
+          ) : (
+            filtered.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-secondary transition-colors"
+                onMouseDown={() => { onChange(c.id); setQuery(""); setOpen(false); }}
+              >
+                <div className="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center text-xs font-semibold text-primary shrink-0">
+                  {initials(c.name)}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium truncate">{c.name}</p>
+                  <p className="text-xs text-muted-foreground truncate">{c.email}</p>
+                </div>
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function BerichtePage({
   reports,
   contracts,
@@ -2605,18 +2695,15 @@ function BerichtePage({
   const [clientId, setClientId] = useState<string>("")
   const [contractSel, setContractSel] = useState("Alle")
   const [type, setType] = useState<Report["type"]>("Performance")
+  const [title, setTitle] = useState("")
   const [from, setFrom] = useState("")
   const [to, setTo] = useState("")
-  const [fileName, setFileName] = useState<string>("")
+  const [file, setFile] = useState<File | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const [uploadSuccess, setUploadSuccess] = useState(false)
 
-  // When switching scope or client, reset the contract dropdown to a sensible default
-  useEffect(() => {
-    if (scope === "Allgemein") {
-      setContractSel("Alle")
-    } else {
-      setContractSel("Alle")
-    }
-  }, [scope, clientId])
+  useEffect(() => { setContractSel("Alle") }, [scope, clientId])
 
   const clientContracts = useMemo(
     () => (clientId ? contracts.filter((c) => c.clientId === clientId) : []),
@@ -2627,30 +2714,46 @@ function BerichtePage({
     [clients, clientId],
   )
 
-  const canUpload =
-    scope === "Allgemein" ? true : Boolean(clientId)
+  const canUpload = Boolean(file && title && (scope === "Allgemein" || clientId))
 
-  function handleUpload() {
-    if (!canUpload) return
-    const isClient = scope === "Kundenspezifisch"
-    onUpload({
-      id: `r${Date.now()}`,
-      name: `${type} ${new Date().getFullYear()}${isClient && selectedClient ? ` · ${selectedClient.name}` : ""}`,
-      contractNo: isClient ? contractSel : "Allgemein",
-      type,
-      date: fmtDate(new Date()),
-      period: `${from || "—"} – ${to || "—"}`,
-      size: fileName ? "1.2 MB" : "—",
-      status: "Bereit",
-      visible: true,
-      scope,
-      clientId: isClient ? clientId : undefined,
-      clientName: isClient && selectedClient ? selectedClient.name : undefined,
-    })
-    setFileName("")
-    setFrom("")
-    setTo("")
-    // TODO: Supabase sync — insert into `reports` (+ upload file to Vercel Blob)
+  async function handleUpload() {
+    if (!canUpload || !file) return
+    setUploading(true)
+    setUploadError(null)
+    setUploadSuccess(false)
+
+    const fd = new FormData()
+    fd.append("file", file)
+    fd.append("title", title || `${type} ${new Date().getFullYear()}`)
+    fd.append("type", type)
+    if (from) fd.append("period_start", from)
+    if (to) fd.append("period_end", to)
+    if (scope === "Kundenspezifisch" && clientId) fd.append("client_id", clientId)
+    const contractId = clientContracts.find((c) => c.contractNo === contractSel)?.id
+    if (contractId) fd.append("contract_id", contractId)
+
+    try {
+      const res = await fetch("/api/admin/reports", { method: "POST", body: fd })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? "Upload fehlgeschlagen")
+
+      onUpload({
+        ...json.report,
+        clientName: scope === "Kundenspezifisch" && selectedClient ? selectedClient.name : undefined,
+      })
+      setFile(null)
+      setTitle("")
+      setFrom("")
+      setTo("")
+      setClientId("")
+      setContractSel("Alle")
+      setUploadSuccess(true)
+      setTimeout(() => setUploadSuccess(false), 4000)
+    } catch (err: unknown) {
+      setUploadError(err instanceof Error ? err.message : "Unbekannter Fehler")
+    } finally {
+      setUploading(false)
+    }
   }
 
   return (
@@ -2679,44 +2782,20 @@ function BerichtePage({
           </TabsList>
         </Tabs>
 
-        {/* Client + contract picker — only when scope is "Kundenspezifisch" */}
+        {/* Client + contract picker */}
         {scope === "Kundenspezifisch" && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 rounded-md border border-border bg-muted/30 p-3">
             <div className="space-y-1.5">
               <Label>
                 Kunde <span className="text-destructive">*</span>
               </Label>
-              <Select value={clientId} onValueChange={setClientId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Kunde auswählen…" />
-                </SelectTrigger>
-                <SelectContent>
-                  {clients.length === 0 && (
-                    <div className="px-2 py-1.5 text-sm text-muted-foreground">
-                      Keine Kunden vorhanden
-                    </div>
-                  )}
-                  {clients.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>
-                      {c.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <ClientCombobox clients={clients} value={clientId} onChange={setClientId} />
             </div>
             <div className="space-y-1.5">
               <Label>Vertrag (optional)</Label>
-              <Select
-                value={contractSel}
-                onValueChange={setContractSel}
-                disabled={!clientId}
-              >
+              <Select value={contractSel} onValueChange={setContractSel} disabled={!clientId}>
                 <SelectTrigger>
-                  <SelectValue
-                    placeholder={
-                      clientId ? "Vertrag wählen…" : "Erst Kunde wählen"
-                    }
-                  />
+                  <SelectValue placeholder={clientId ? "Vertrag wählen…" : "Erst Kunde wählen"} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="Alle">Alle Verträge des Kunden</SelectItem>
@@ -2732,13 +2811,22 @@ function BerichtePage({
         )}
 
         {/* Common fields */}
+        <div className="space-y-1.5">
+          <Label>
+            Titel <span className="text-destructive">*</span>
+          </Label>
+          <Input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="z.B. Performance Report Q1 2026"
+          />
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <div className="space-y-1.5">
             <Label>Typ</Label>
             <Select value={type} onValueChange={(v) => setType(v as Report["type"])}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
+              <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="Performance">Performance</SelectItem>
                 <SelectItem value="Jahresbericht">Jahresbericht</SelectItem>
@@ -2760,8 +2848,8 @@ function BerichtePage({
 
         <label className="flex flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed border-border bg-muted/30 px-6 py-8 text-center text-sm text-muted-foreground cursor-pointer hover:border-primary/40 hover:bg-primary/5 transition">
           <Upload className="size-6" />
-          {fileName ? (
-            <span className="font-medium text-foreground">{fileName}</span>
+          {file ? (
+            <span className="font-medium text-foreground">{file.name}</span>
           ) : (
             <>PDF hier ablegen oder klicken zum Auswählen</>
           )}
@@ -2769,21 +2857,37 @@ function BerichtePage({
             type="file"
             accept=".pdf"
             className="hidden"
-            onChange={(e) => setFileName(e.target.files?.[0]?.name ?? "")}
+            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
           />
         </label>
 
+        {uploadError && (
+          <p className="text-sm text-destructive rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2">
+            {uploadError}
+          </p>
+        )}
+        {uploadSuccess && (
+          <p className="text-sm text-green-600 rounded-md border border-green-300 bg-green-50 px-3 py-2">
+            ✓ Bericht erfolgreich hochgeladen und für Kunden freigegeben.
+          </p>
+        )}
+
         <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-          <Button onClick={handleUpload} disabled={!canUpload} className="w-full sm:w-auto">
-            <Upload className="size-4" />
-            {scope === "Kundenspezifisch"
-              ? "Hochladen + für Kunde freigeben"
-              : "Hochladen + für alle Kunden freigeben"}
+          <Button onClick={handleUpload} disabled={!canUpload || uploading} className="w-full sm:w-auto">
+            {uploading ? (
+              <><Loader2 className="size-4 animate-spin" /> Wird hochgeladen…</>
+            ) : (
+              <><Upload className="size-4" />
+              {scope === "Kundenspezifisch"
+                ? "Hochladen + für Kunde freigeben"
+                : "Hochladen + für alle Kunden freigeben"}</>
+            )}
           </Button>
           {scope === "Kundenspezifisch" && !clientId && (
-            <p className="text-xs text-muted-foreground">
-              Bitte zuerst einen Kunden auswählen.
-            </p>
+            <p className="text-xs text-muted-foreground">Bitte zuerst einen Kunden auswählen.</p>
+          )}
+          {!file && (
+            <p className="text-xs text-muted-foreground">Bitte PDF auswählen.</p>
           )}
         </div>
       </CardShell>
@@ -2794,20 +2898,35 @@ function BerichtePage({
             <TableRow>
               <TableHead>Bericht</TableHead>
               <TableHead>Sichtbarkeit</TableHead>
-              <TableHead>Vertrag</TableHead>
               <TableHead>Typ</TableHead>
               <TableHead>Datum</TableHead>
               <TableHead>Zeitraum</TableHead>
               <TableHead>Größe</TableHead>
-              <TableHead>Status</TableHead>
               <TableHead>Sichtbar</TableHead>
               <TableHead className="text-right">Aktion</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
+            {reports.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={8} className="text-center py-8 text-muted-foreground text-sm">
+                  Noch keine Berichte hochgeladen.
+                </TableCell>
+              </TableRow>
+            )}
             {reports.map((r) => (
               <TableRow key={r.id}>
-                <TableCell className="font-medium">{r.name}</TableCell>
+                <TableCell className="font-medium">
+                  <div className="flex items-center gap-2">
+                    <FileText className="size-4 text-muted-foreground shrink-0" />
+                    <div>
+                      <p className="font-medium">{r.name}</p>
+                      {r.fileName && (
+                        <p className="text-xs text-muted-foreground font-mono">{r.fileName}</p>
+                      )}
+                    </div>
+                  </div>
+                </TableCell>
                 <TableCell>
                   {r.scope === "Kundenspezifisch" ? (
                     <span className="inline-flex items-center rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
@@ -2819,31 +2938,22 @@ function BerichtePage({
                     </span>
                   )}
                 </TableCell>
-                <TableCell className="font-mono text-xs">{r.contractNo}</TableCell>
                 <TableCell>{r.type}</TableCell>
                 <TableCell className="font-mono text-xs">{r.date}</TableCell>
                 <TableCell className="text-sm text-muted-foreground">{r.period}</TableCell>
                 <TableCell className="font-mono text-xs">{r.size}</TableCell>
                 <TableCell>
-                  <span
-                    className={cn(
-                      "inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium",
-                      r.status === "Bereit"
-                        ? "bg-[var(--fin-gain)]/10 text-[var(--fin-gain)] border-[var(--fin-gain)]/20"
-                        : "bg-[var(--warning)]/10 text-[var(--warning)] border-[var(--warning)]/30",
-                    )}
-                  >
-                    {r.status}
-                  </span>
-                </TableCell>
-                <TableCell>
                   <Switch checked={r.visible} onCheckedChange={(v) => onToggle(r.id, v)} />
                 </TableCell>
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-1">
-                    <Button size="icon" variant="ghost" className="size-8">
-                      <Edit className="size-4" />
-                    </Button>
+                    {r.fileUrl && (
+                      <Button size="icon" variant="ghost" className="size-8" asChild>
+                        <a href={r.fileUrl} target="_blank" rel="noopener noreferrer">
+                          <Download className="size-4" />
+                        </a>
+                      </Button>
+                    )}
                     <Button
                       size="icon"
                       variant="ghost"
@@ -2859,7 +2969,6 @@ function BerichtePage({
           </TableBody>
         </Table>
       </CardShell>
-      {/* TODO: Supabase sync — reports table */}
     </div>
   )
 }
