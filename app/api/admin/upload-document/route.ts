@@ -7,6 +7,8 @@ export async function POST(req: NextRequest) {
   const contractId = formData.get('contract_id') as string | null
   const clientId = formData.get('client_id') as string | null
   const fileName = formData.get('file_name') as string | null
+  const visibleToClientRaw = formData.get('visible_to_client')
+  const visibleToClient = visibleToClientRaw === 'false' ? false : true
 
   if (!file || !contractId || !clientId) {
     return NextResponse.json({ error: 'file, contract_id und client_id sind erforderlich' }, { status: 400 })
@@ -14,7 +16,8 @@ export async function POST(req: NextRequest) {
 
   const name = fileName || file.name
   const safeName = name.replace(/[^a-zA-Z0-9._\-]/g, '_')
-  const storagePath = `${clientId}/${contractId}/${Date.now()}_${safeName}`
+  const folder = visibleToClient ? 'client' : 'internal'
+  const storagePath = `${clientId}/${contractId}/${folder}/${Date.now()}_${safeName}`
 
   const buffer = Buffer.from(await file.arrayBuffer())
 
@@ -30,7 +33,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: uploadError.message }, { status: 500 })
   }
 
-  // Signed URL valid for 10 years
   const { data: signedData, error: signError } = await supabaseAdmin.storage
     .from('contracts')
     .createSignedUrl(storagePath, 60 * 60 * 24 * 365 * 10)
@@ -39,7 +41,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Signed URL konnte nicht erstellt werden' }, { status: 500 })
   }
 
-  // Insert record in contract_documents table
   const { data: docRecord, error: dbError } = await supabaseAdmin
     .from('contract_documents')
     .insert({
@@ -47,6 +48,7 @@ export async function POST(req: NextRequest) {
       client_id: clientId,
       file_name: safeName,
       file_url: signedData.signedUrl,
+      visible_to_client: visibleToClient,
     })
     .select()
     .single()
@@ -60,5 +62,6 @@ export async function POST(req: NextRequest) {
     url: signedData.signedUrl,
     file_name: safeName,
     id: docRecord.id,
+    visible_to_client: visibleToClient,
   })
 }

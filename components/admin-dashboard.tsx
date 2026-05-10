@@ -1112,6 +1112,7 @@ function NewContractDialog({
   const [interval, setInterval] = useState<Interval>("Jährlich")
   const [kapDate, setKapDate] = useState("")
   const [uploadFiles, setUploadFiles] = useState<File[]>([])
+  const [internalFiles, setInternalFiles] = useState<File[]>([])
   const [uploading, setUploading] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [alloc, setAlloc] = useState({
@@ -1145,6 +1146,7 @@ function NewContractDialog({
     setMmtt("")
     setSeq("")
     setUploadFiles([])
+    setInternalFiles([])
     setFormError(null)
     setKapDate("")
   }
@@ -1203,17 +1205,32 @@ function NewContractDialog({
         return
       }
 
-      // Upload each document after contract creation
+      // Upload client-visible documents
       for (const file of uploadFiles) {
         const fd = new FormData()
         fd.append("file", file)
         fd.append("contract_id", data.contract.id)
         fd.append("client_id", clientId)
         fd.append("file_name", file.name)
+        fd.append("visible_to_client", "true")
         try {
           await fetch("/api/admin/upload-document", { method: "POST", body: fd })
         } catch {
           console.error("[NewContractDialog] Document upload failed:", file.name)
+        }
+      }
+      // Upload internal-only documents
+      for (const file of internalFiles) {
+        const fd = new FormData()
+        fd.append("file", file)
+        fd.append("contract_id", data.contract.id)
+        fd.append("client_id", clientId)
+        fd.append("file_name", file.name)
+        fd.append("visible_to_client", "false")
+        try {
+          await fetch("/api/admin/upload-document", { method: "POST", body: fd })
+        } catch {
+          console.error("[NewContractDialog] Internal document upload failed:", file.name)
         }
       }
 
@@ -1410,12 +1427,17 @@ function NewContractDialog({
             </div>
           </section>
 
-          {/* Section 6 — Dokumente */}
+          {/* Section 6A — Vertragsdokumente (client-visible) */}
           <section className="space-y-3">
-            <h3 className="text-sm font-semibold">6 · Dokumente</h3>
-            <label className="flex flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed border-border bg-muted/30 px-6 py-8 text-center text-sm cursor-pointer transition hover:border-primary/40 hover:bg-primary/5 text-muted-foreground">
-              <Upload className="size-6" />
-              Dokumente hochladen (.pdf, .doc, .docx)
+            <div>
+              <h3 className="text-sm font-semibold">6 · Vertragsdokumente</h3>
+              <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-0.5 mt-1">
+                ✓ Sichtbar im Kundenportal
+              </span>
+            </div>
+            <label className="flex flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed border-emerald-200/60 bg-emerald-50/20 px-6 py-6 text-center text-sm cursor-pointer transition hover:border-emerald-400/60 hover:bg-emerald-50/40 text-muted-foreground">
+              <Upload className="size-5 text-emerald-600" />
+              Vertragsdokumente hochladen (.pdf, .doc, .docx)
               <input
                 type="file"
                 accept=".pdf,.doc,.docx"
@@ -1431,15 +1453,9 @@ function NewContractDialog({
             {uploadFiles.length > 0 && (
               <div className="space-y-1">
                 {uploadFiles.map((f, i) => (
-                  <div key={i} className="flex items-center justify-between rounded-md border border-border px-3 py-1.5">
-                    <span className="font-mono text-xs truncate text-[var(--fin-gain)]">{f.name}</span>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="size-6 shrink-0"
-                      type="button"
-                      onClick={() => setUploadFiles(uploadFiles.filter((_, j) => j !== i))}
-                    >
+                  <div key={i} className="flex items-center justify-between rounded-md border border-emerald-200/60 bg-emerald-50/30 px-3 py-1.5">
+                    <span className="font-mono text-xs truncate text-emerald-700">{f.name}</span>
+                    <Button size="icon" variant="ghost" className="size-6 shrink-0" type="button" onClick={() => setUploadFiles(uploadFiles.filter((_, j) => j !== i))}>
                       <Trash2 className="size-3" />
                     </Button>
                   </div>
@@ -1448,9 +1464,46 @@ function NewContractDialog({
             )}
           </section>
 
-          {/* Section 7 — Status */}
+          {/* Section 6B — Interne Dokumente (not visible to client) */}
           <section className="space-y-3">
-            <h3 className="text-sm font-semibold">7 · Status</h3>
+            <div>
+              <h3 className="text-sm font-semibold">7 · Interne Dokumente</h3>
+              <span className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5 mt-1">
+                🔒 Nur intern — nicht für Kunden sichtbar
+              </span>
+            </div>
+            <label className="flex flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed border-amber-200/60 bg-amber-50/20 px-6 py-6 text-center text-sm cursor-pointer transition hover:border-amber-400/60 hover:bg-amber-50/40 text-muted-foreground">
+              <Upload className="size-5 text-amber-600" />
+              Interne Dokumente hochladen (Ausweis, IBAN, KYC…)
+              <input
+                type="file"
+                accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                multiple
+                className="hidden"
+                onChange={(e) => {
+                  const files = Array.from(e.target.files ?? [])
+                  setInternalFiles((prev) => [...prev, ...files])
+                  e.target.value = ""
+                }}
+              />
+            </label>
+            {internalFiles.length > 0 && (
+              <div className="space-y-1">
+                {internalFiles.map((f, i) => (
+                  <div key={i} className="flex items-center justify-between rounded-md border border-amber-200/60 bg-amber-50/30 px-3 py-1.5">
+                    <span className="font-mono text-xs truncate text-amber-700">{f.name}</span>
+                    <Button size="icon" variant="ghost" className="size-6 shrink-0" type="button" onClick={() => setInternalFiles(internalFiles.filter((_, j) => j !== i))}>
+                      <Trash2 className="size-3" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          {/* Section 8 — Status */}
+          <section className="space-y-3">
+            <h3 className="text-sm font-semibold">8 · Status</h3>
             <Select value={status} onValueChange={(v) => setStatus(v as ContractStatus)}>
               <SelectTrigger className="w-full md:w-64"><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -1487,7 +1540,7 @@ function NewContractDialog({
 // Contract Detail Sheet
 // ----------------------------------------------------------------------------
 
-type DocRecord = { id: string; file_name: string; file_url: string; uploaded_at: string }
+type DocRecord = { id: string; file_name: string; file_url: string; uploaded_at: string; visible_to_client: boolean }
 
 function ContractDetailSheet({
   contract,
@@ -1518,7 +1571,7 @@ function ContractDetailSheet({
       .catch(console.error)
   }, [contract])
 
-  async function handleDocUpload(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleDocUpload(e: React.ChangeEvent<HTMLInputElement>, visibleToClient: boolean) {
     if (!contract) return
     const files = Array.from(e.target.files ?? [])
     if (!files.length) return
@@ -1529,11 +1582,18 @@ function ContractDetailSheet({
       fd.append("contract_id", contract.id)
       fd.append("client_id", contract.clientId)
       fd.append("file_name", file.name)
+      fd.append("visible_to_client", String(visibleToClient))
       try {
         const res = await fetch("/api/admin/upload-document", { method: "POST", body: fd })
         const data = await res.json()
         if (res.ok) {
-          setDocs((prev) => [{ id: data.id, file_name: data.file_name, file_url: data.url, uploaded_at: new Date().toISOString() }, ...prev])
+          setDocs((prev) => [{
+            id: data.id,
+            file_name: data.file_name,
+            file_url: data.url,
+            uploaded_at: new Date().toISOString(),
+            visible_to_client: visibleToClient,
+          }, ...prev])
         }
       } catch { /* non-fatal */ }
     }
@@ -1657,10 +1717,15 @@ function ContractDetailSheet({
                 </Button>
               </div>
 
-              {/* Documents */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-sm font-semibold">Dokumente</h3>
+              {/* Documents — Section A: Client-visible */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-semibold">Vertragsdokumente</h3>
+                    <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-0.5 mt-0.5">
+                      ✓ Sichtbar im Kundenportal
+                    </span>
+                  </div>
                   <label className="cursor-pointer">
                     <Button size="sm" variant="outline" asChild>
                       <span>
@@ -1673,34 +1738,67 @@ function ContractDetailSheet({
                       accept=".pdf,.doc,.docx"
                       multiple
                       className="hidden"
-                      onChange={handleDocUpload}
+                      onChange={(e) => handleDocUpload(e, true)}
                     />
                   </label>
                 </div>
                 <div className="space-y-1">
-                  {docs.map((d) => (
+                  {docs.filter((d) => d.visible_to_client !== false).map((d) => (
                     <div key={d.id} className="flex items-center justify-between rounded-md border border-border px-3 py-2">
-                      <a
-                        href={d.file_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-2 text-sm text-primary hover:underline truncate"
-                      >
+                      <a href={d.file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-sm text-primary hover:underline truncate">
                         <FileText className="size-4 shrink-0" />
                         <span className="truncate">{d.file_name}</span>
                       </a>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="size-7 shrink-0"
-                        onClick={() => handleDocDelete(d.id)}
-                      >
+                      <Button size="icon" variant="ghost" className="size-7 shrink-0" onClick={() => handleDocDelete(d.id)}>
                         <Trash2 className="size-3" />
                       </Button>
                     </div>
                   ))}
-                  {docs.length === 0 && !docUploading && (
-                    <p className="text-sm text-muted-foreground">Keine Dokumente.</p>
+                  {docs.filter((d) => d.visible_to_client !== false).length === 0 && !docUploading && (
+                    <p className="text-xs text-muted-foreground">Keine Vertragsdokumente.</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Documents — Section B: Internal only */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-semibold">Interne Dokumente</h3>
+                    <span className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5 mt-0.5">
+                      🔒 Nur intern — nicht für Kunden sichtbar
+                    </span>
+                  </div>
+                  <label className="cursor-pointer">
+                    <Button size="sm" variant="outline" asChild>
+                      <span>
+                        {docUploading ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}
+                        {" "}Hochladen
+                      </span>
+                    </Button>
+                    <input
+                      type="file"
+                      accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => handleDocUpload(e, false)}
+                    />
+                  </label>
+                </div>
+                <div className="space-y-1">
+                  {docs.filter((d) => d.visible_to_client === false).map((d) => (
+                    <div key={d.id} className="flex items-center justify-between rounded-md border border-amber-200/50 bg-amber-50/30 px-3 py-2">
+                      <a href={d.file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-sm text-foreground hover:underline truncate">
+                        <FileText className="size-4 shrink-0 text-amber-600" />
+                        <span className="truncate">{d.file_name}</span>
+                      </a>
+                      <Button size="icon" variant="ghost" className="size-7 shrink-0" onClick={() => handleDocDelete(d.id)}>
+                        <Trash2 className="size-3" />
+                      </Button>
+                    </div>
+                  ))}
+                  {docs.filter((d) => d.visible_to_client === false).length === 0 && !docUploading && (
+                    <p className="text-xs text-muted-foreground">Keine internen Dokumente.</p>
                   )}
                 </div>
               </div>
