@@ -1,6 +1,8 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
+import { useRouter } from "next/navigation"
+import { createBrowserClient } from "@supabase/ssr"
 import { NewClientModal } from "@/components/admin/new-client-modal"
 import {
   Plus,
@@ -18,6 +20,7 @@ import {
   Copy,
   Wallet,
   CreditCard,
+  LogOut,
 } from "lucide-react"
 import { Skeleton } from "@/components/ui/skeleton"
 
@@ -29,6 +32,12 @@ import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { Switch } from "@/components/ui/switch"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Separator } from "@/components/ui/separator"
 import {
   Select,
@@ -280,6 +289,18 @@ function CardShell({
 // ----------------------------------------------------------------------------
 
 export default function AdminDashboard() {
+  const router = useRouter()
+
+  const handleLogout = async () => {
+    const supabase = createBrowserClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    )
+    await supabase.auth.signOut()
+    router.push("/login")
+    router.refresh()
+  }
+
   const [page, setPage] = useState<PageKey>("uebersicht")
   const [loading, setLoading] = useState(true)
 
@@ -370,11 +391,26 @@ export default function AdminDashboard() {
             <span className="hidden sm:inline text-xs text-muted-foreground">
               Admin · Le Valeur Management AG
             </span>
-            <Avatar className="h-8 w-8">
-              <AvatarFallback className="bg-primary text-primary-foreground text-xs font-medium">
-                AD
-              </AvatarFallback>
-            </Avatar>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="rounded-full outline-none ring-2 ring-transparent hover:ring-primary/30 transition-all">
+                  <Avatar className="h-8 w-8">
+                    <AvatarFallback className="bg-primary text-primary-foreground text-xs font-medium">
+                      AD
+                    </AvatarFallback>
+                  </Avatar>
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-40">
+                <DropdownMenuItem
+                  className="cursor-pointer text-destructive focus:text-destructive"
+                  onClick={handleLogout}
+                >
+                  <LogOut className="w-4 h-4 mr-2" />
+                  Abmelden
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </header>
