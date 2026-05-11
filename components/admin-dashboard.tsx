@@ -198,16 +198,15 @@ const activities: { dot: string; text: string; time: string }[] = []
 // ----------------------------------------------------------------------------
 
 const fmtEUR = (n: number) =>
-  new Intl.NumberFormat("de-AT", {
-    style: "currency",
-    currency: "EUR",
+  "€" + new Intl.NumberFormat("de-AT", {
+    minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(Number(n) || 0)
 
 const fmtPct = (n: number) =>
   new Intl.NumberFormat("de-DE", {
-    minimumFractionDigits: 1,
-    maximumFractionDigits: 1,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   }).format(n) + "%"
 
 function addDays(d: Date, days: number) {
@@ -1202,7 +1201,7 @@ function NewContractDialog({
             id: existingContract.id,
             contract_number: contractNo,
             investment_amount: Number(deposit),
-            rendite_pa: Number(yieldPa),
+            rendite_pa: parseFloat(String(yieldPa).replace(",", ".")),
             duration_years: Number(duration),
             payout_interval: interval,
             capital_received_date: kapDate,
@@ -1227,7 +1226,7 @@ function NewContractDialog({
           client_id: clientId,
           contract_number: contractNo,
           investment_amount: Number(deposit),
-          rendite_pa: Number(yieldPa),
+          rendite_pa: parseFloat(String(yieldPa).replace(",", ".")),
           duration_years: Number(duration),
           payout_interval: interval,
           capital_received_date: kapDate,
