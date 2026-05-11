@@ -3,13 +3,13 @@ import { createServerClient } from '@supabase/ssr'
 import { supabaseAdmin } from '@/lib/supabase/admin-client'
 
 export async function POST(req: NextRequest) {
-  const { email, password } = await req.json()
+  const { email, pin } = await req.json()
 
-  if (!email || !password) {
-    return NextResponse.json({ error: 'E-Mail und Passwort erforderlich' }, { status: 400 })
+  if (!email || !pin) {
+    return NextResponse.json({ error: 'E-Mail und PIN erforderlich' }, { status: 400 })
   }
 
-  // Check whitelist
+  // Check whitelist first
   const { data: admin } = await supabaseAdmin
     .from('admins')
     .select('id, email, name, role')
@@ -17,10 +17,9 @@ export async function POST(req: NextRequest) {
     .single()
 
   if (!admin) {
-    return NextResponse.json({ error: 'Zugang verweigert' }, { status: 403 })
+    return NextResponse.json({ error: 'Kein Zugang' }, { status: 403 })
   }
 
-  // Sign in and set session cookies
   const response = NextResponse.json({ success: true, admin })
 
   const supabase = createServerClient(
@@ -38,7 +37,7 @@ export async function POST(req: NextRequest) {
     }
   )
 
-  const { error } = await supabase.auth.signInWithPassword({ email, password })
+  const { error } = await supabase.auth.signInWithPassword({ email, password: pin })
   if (error) {
     return NextResponse.json({ error: 'Ungültige Anmeldedaten' }, { status: 401 })
   }
