@@ -658,7 +658,15 @@ function UebersichtPage({
     .reduce((s, c) => s + (Number(c.deposit) || 0), 0)
   const openTickets = tickets.filter((t) => t.status === "Offen").length
 
-  const upcoming = payouts.filter((p) => p.status === "Ausstehend")
+  const upcoming = (() => {
+    const pending = payouts.filter((p) => p.status === "Ausstehend" || p.status === "Überfällig")
+    const byContract = new Map<string, Payout>()
+    for (const p of pending) {
+      const existing = byContract.get(p.contractNo)
+      if (!existing || p.date < existing.date) byContract.set(p.contractNo, p)
+    }
+    return Array.from(byContract.values()).sort((a, b) => a.date.localeCompare(b.date))
+  })()
 
   return (
     <div className="mx-auto max-w-[1400px] space-y-6">
