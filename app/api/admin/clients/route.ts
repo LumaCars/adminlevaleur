@@ -51,3 +51,23 @@ export async function GET() {
   console.log('[/api/admin/clients] Returning', clients.length, 'clients')
   return NextResponse.json({ clients })
 }
+
+export async function PUT(request: Request) {
+  const { id, first_name, last_name, phone, account_status, notes } = await request.json()
+  if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
+
+  const { error } = await supabaseAdmin
+    .from('clients')
+    .update({
+      first_name,
+      last_name,
+      phone: phone || null,
+      account_status: account_status || null,
+      notes: notes || null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id)
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  return NextResponse.json({ success: true })
+}

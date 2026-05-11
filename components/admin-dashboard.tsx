@@ -544,6 +544,7 @@ export default function AdminDashboard() {
         onSave={(updated) => {
           setClients((arr) => arr.map((c) => (c.id === updated.id ? updated : c)))
         }}
+        onRefresh={loadData}
         onOpenContract={(id) => {
           setActiveClientId(null)
           setActiveContractId(id)
@@ -1914,6 +1915,7 @@ function ClientProfileSheet({
   initialTab = "profil",
   onClose,
   onSave,
+  onRefresh,
   onOpenContract,
   onAddContract,
 }: {
@@ -1923,6 +1925,7 @@ function ClientProfileSheet({
   initialTab?: "profil" | "vertraege" | "payouts" | "support"
   onClose: () => void
   onSave: (c: Client) => void
+  onRefresh?: () => void
   onOpenContract: (id: string) => void
   onAddContract: (clientId: string) => void
 }) {
@@ -1930,6 +1933,8 @@ function ClientProfileSheet({
   const [tab, setTab] = useState<"profil" | "vertraege" | "payouts" | "support" | "zahlungsinfos">(initialTab)
   const [clientContracts, setClientContracts] = useState<Contract[]>([])
   const [contractsLoading, setContractsLoading] = useState(false)
+  const [saveState, setSaveState] = useState<"idle" | "loading" | "success" | "error">("idle")
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [codeState, setCodeState] = useState<"idle" | "loading" | "success" | "error">("idle")
   const [newCode, setNewCode] = useState<string | null>(null)
   const [codeError, setCodeError] = useState<string | null>(null)
@@ -1968,6 +1973,42 @@ function ClientProfileSheet({
       .catch(console.error)
       .finally(() => setPaymentLoading(false))
   }, [client])
+
+  async function handleSaveProfile() {
+    if (!draft) return
+    setSaveState("loading")
+    setSaveError(null)
+    const parts = draft.name.trim().split(" ")
+    const first_name = parts[0] ?? ""
+    const last_name = parts.slice(1).join(" ") || ""
+    try {
+      const res = await fetch("/api/admin/clients", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: draft.id,
+          first_name,
+          last_name,
+          phone: draft.phone ?? null,
+          account_status: draft.tier ?? draft.status ?? null,
+          notes: draft.notes ?? null,
+        }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        onSave(draft)
+        onRefresh?.()
+        setSaveState("success")
+        setTimeout(() => setSaveState("idle"), 3000)
+      } else {
+        setSaveState("error")
+        setSaveError(data.error || "Fehler beim Speichern.")
+      }
+    } catch {
+      setSaveState("error")
+      setSaveError("Verbindungsfehler. Bitte erneut versuchen.")
+    }
+  }
 
   async function handleResetCode() {
     if (!client) return
@@ -2074,13 +2115,21 @@ function ClientProfileSheet({
                   />
                 </div>
                 <Button
-                  onClick={() => {
-                    onSave(draft)
-                  }}
+                  onClick={handleSaveProfile}
+                  disabled={saveState === "loading"}
                   className="w-full"
                 >
-                  Speichern
+                  {saveState === "loading" ? (
+                    <><Loader2 className="size-4 animate-spin mr-2" /> Wird gespeichert…</>
+                  ) : "Speichern"}
                 </Button>
+
+                {saveState === "success" && (
+                  <p className="text-sm text-center text-[var(--fin-gain)]">✓ Gespeichert</p>
+                )}
+                {saveState === "error" && saveError && (
+                  <p className="text-sm text-center text-destructive">{saveError}</p>
+                )}
 
                 <Separator />
 
