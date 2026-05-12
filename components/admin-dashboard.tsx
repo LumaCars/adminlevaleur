@@ -204,9 +204,9 @@ const fmtEUR = (n: number) =>
   }).format(Number(n) || 0)
 
 const fmtPct = (n: number) =>
-  new Intl.NumberFormat("de-DE", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+  new Intl.NumberFormat("de-AT", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 6,
   }).format(n) + "%"
 
 function addDays(d: Date, days: number) {
@@ -1371,7 +1371,7 @@ function NewContractDialog({
               </div>
               <div className="space-y-1.5">
                 <Label>Rendite p.a. %</Label>
-                <Input value={yieldPa} onChange={(e) => setYieldPa(e.target.value)} className="font-mono" />
+                <Input value={yieldPa} onChange={(e) => setYieldPa(e.target.value)} className="font-mono" type="text" inputMode="decimal" />
               </div>
               <div className="space-y-1.5">
                 <Label>Laufzeit</Label>
