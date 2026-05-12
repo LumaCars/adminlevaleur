@@ -86,15 +86,19 @@ export async function GET(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
-  const { id, proof_link, paid_date } = await req.json()
+  const { id, proof_link, paid_date, payment_method, tx_hash, proof_file_url, proof_file_name } = await req.json()
   if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
 
   const { error } = await supabaseAdmin
     .from('payouts')
     .update({
       status: 'Ausgezahlt',
-      proof_link: proof_link || null,
+      proof_link: proof_link || tx_hash || proof_file_url || null,
       paid_date: paid_date || new Date().toISOString().split('T')[0],
+      ...(payment_method !== undefined && { payment_method }),
+      ...(tx_hash !== undefined && { tx_hash: tx_hash || null }),
+      ...(proof_file_url !== undefined && { proof_file_url: proof_file_url || null }),
+      ...(proof_file_name !== undefined && { proof_file_name: proof_file_name || null }),
     })
     .eq('id', id)
 

@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { createBrowserClient } from "@supabase/ssr"
 import { NewClientModal } from "@/components/admin/new-client-modal"
@@ -21,6 +21,7 @@ import {
   Wallet,
   CreditCard,
   LogOut,
+  X,
 } from "lucide-react"
 import { Skeleton } from "@/components/ui/skeleton"
 
@@ -2443,6 +2444,9 @@ function PayoutsPage({
 // Payout Entry Dialog
 // ----------------------------------------------------------------------------
 
+const MAX_PROOF_SIZE = 10 * 1024 * 1024
+const ALLOWED_PROOF_TYPES = ['application/pdf', 'image/png', 'image/jpeg', 'image/jpg']
+
 function PayoutEntryDialog({
   payout,
   onClose,
@@ -2454,11 +2458,15 @@ function PayoutEntryDialog({
 }) {
   const [date, setDate] = useState(new Date().toISOString().split('T')[0])
   const [method, setMethod] = useState("Crypto")
-  const [receipt, setReceipt] = useState("")
+  const [txHash, setTxHash] = useState("")
+  const [proofFile, setProofFile] = useState<File | null>(null)
+  const [fileError, setFileError] = useState<string | null>(null)
+  const [uploadError, setUploadError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [wallets, setWallets] = useState<WalletAddress[]>([])
   const [cards, setCards] = useState<BbCard[]>([])
   const [copied, setCopied] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (!payout?.clientId) { setWallets([]); setCards([]); return }
@@ -2469,7 +2477,10 @@ function PayoutEntryDialog({
   }, [payout?.clientId])
 
   useEffect(() => {
-    if (!payout) { setReceipt(""); setSaving(false) }
+    if (!payout) {
+      setTxHash(""); setProofFile(null); setFileError(null)
+      setUploadError(null); setSaving(false)
+    }
   }, [payout])
 
   const copyToClipboard = (text: string, key: string) => {
@@ -2478,16 +2489,56 @@ function PayoutEntryDialog({
     setTimeout(() => setCopied(null), 1500)
   }
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0] ?? null
+    setFileError(null)
+    if (!f) { setProofFile(null); return }
+    if (f.size > MAX_PROOF_SIZE) { setFileError("Datei zu groß (max. 10 MB)"); return }
+    if (!ALLOWED_PROOF_TYPES.includes(f.type)) { setFileError("Ungültiges Format (PDF, PNG, JPG erlaubt)"); return }
+    setProofFile(f)
+  }
+
+  const isConfirmDisabled = (): boolean => {
+    if (saving) return true
+    if (method === "Crypto") return !txHash.trim()
+    if (method === "Banküberweisung") return !proofFile
+    if (method === "Borderless Banking Debit Karte") return !txHash.trim() && !proofFile
+    return false
+  }
+
   const handleConfirm = async () => {
     if (!payout) return
     setSaving(true)
+    setUploadError(null)
     try {
+      let proofFileUrl: string | undefined
+      let proofFileName: string | undefined
+
+      if (proofFile) {
+        const fd = new FormData()
+        fd.append('file', proofFile)
+        fd.append('payout_id', payout.id)
+        const res = await fetch('/api/admin/payout-proof', { method: 'POST', body: fd })
+        const data = await res.json()
+        if (!res.ok) { setUploadError(data.error ?? 'Upload fehlgeschlagen'); return }
+        proofFileUrl = data.url
+        proofFileName = data.name
+      }
+
       await fetch('/api/admin/payouts', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: payout.id, proof_link: receipt || null, paid_date: date }),
+        body: JSON.stringify({
+          id: payout.id,
+          paid_date: date,
+          payment_method: method,
+          tx_hash: txHash.trim() || null,
+          proof_file_url: proofFileUrl ?? null,
+          proof_file_name: proofFileName ?? null,
+        }),
       })
-      onConfirm(receipt || "—")
+
+      onConfirm(txHash.trim() || proofFileName || "—")
     } finally {
       setSaving(false)
     }
@@ -2542,7 +2593,7 @@ function PayoutEntryDialog({
               {cards.length > 0 && (
                 <div className="rounded-md border border-border bg-secondary/30 p-3 space-y-2">
                   <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
-                    <CreditCard className="size-3" /> Borderless Banking Karte
+                    <CreditCard className="size-3" /> Borderless Banking Debit Karte
                   </p>
                   {cards.map((c) => (
                     <div key={c.id} className="flex items-center gap-3 text-xs">
@@ -2563,28 +2614,74 @@ function PayoutEntryDialog({
               </div>
               <div className="space-y-1.5">
                 <Label>Zahlungsart</Label>
-                <Select value={method} onValueChange={setMethod}>
+                <Select value={method} onValueChange={(v) => { setMethod(v); setTxHash(""); setProofFile(null); setFileError(null); setUploadError(null) }}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="Crypto">Crypto</SelectItem>
                     <SelectItem value="Banküberweisung">Banküberweisung</SelectItem>
-                    <SelectItem value="BB-Karte">BB-Karte</SelectItem>
+                    <SelectItem value="Borderless Banking Debit Karte">Borderless Banking Debit Karte</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-1.5">
-                <Label>Zahlungsbeleg</Label>
-                <Input
-                  placeholder={method === "Crypto" ? "Blockchain TX Hash" : "SEPA Referenz"}
-                  value={receipt}
-                  onChange={(e) => setReceipt(e.target.value)}
-                  className="font-mono text-sm"
-                />
-              </div>
+
+              {/* Dynamic proof fields */}
+              {(method === "Crypto" || method === "Borderless Banking Debit Karte") && (
+                <div className="space-y-1.5">
+                  <Label>Blockchain TX Hash{method === "Crypto" && <span className="text-destructive ml-0.5">*</span>}</Label>
+                  <Input
+                    placeholder="0x…"
+                    value={txHash}
+                    onChange={(e) => setTxHash(e.target.value)}
+                    className="font-mono text-sm"
+                  />
+                </div>
+              )}
+              {(method === "Banküberweisung" || method === "Borderless Banking Debit Karte") && (
+                <div className="space-y-1.5">
+                  <Label>
+                    Kontoauszug / Beleg hochladen{method === "Banküberweisung" && <span className="text-destructive ml-0.5">*</span>}
+                  </Label>
+                  <div
+                    className="flex items-center gap-3 border border-dashed border-border rounded-md px-3 py-2.5 cursor-pointer hover:bg-secondary/40 transition-colors"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <Upload className="size-4 text-muted-foreground shrink-0" />
+                    <span className="text-sm text-muted-foreground truncate">
+                      {proofFile ? proofFile.name : "PDF, PNG oder JPG — max. 10 MB"}
+                    </span>
+                    {proofFile && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setProofFile(null); if (fileInputRef.current) fileInputRef.current.value = "" }}
+                        className="ml-auto shrink-0 p-0.5 rounded hover:bg-sidebar-accent"
+                      >
+                        <X className="size-3.5 text-muted-foreground" />
+                      </button>
+                    )}
+                  </div>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".pdf,.png,.jpg,.jpeg"
+                    className="hidden"
+                    onChange={handleFileChange}
+                  />
+                  {fileError && <p className="text-xs text-destructive">{fileError}</p>}
+                  {method === "Borderless Banking Debit Karte" && (
+                    <p className="text-xs text-muted-foreground">TX Hash oder Beleg — mindestens eines erforderlich.</p>
+                  )}
+                </div>
+              )}
+
+              {uploadError && (
+                <p className="text-xs text-destructive bg-destructive/10 border border-destructive/30 rounded-md px-3 py-2">
+                  Upload-Fehler: {uploadError}
+                </p>
+              )}
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={onClose} disabled={saving}>Abbrechen</Button>
-              <Button onClick={handleConfirm} disabled={saving}>
+              <Button onClick={handleConfirm} disabled={isConfirmDisabled()}>
                 {saving ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}
                 Als ausgezahlt markieren
               </Button>
